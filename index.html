@@ -423,13 +423,52 @@ body.view-mode .lock-status * {
 .data-table td.center { text-align: center; }
 .data-table td.mono { font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
 
-.data-table tr.level-1 td { background: var(--highlight-soft); font-weight: 600; }
-.data-table tr.level-1 td.right { color: var(--accent); }
+/* Bütçe/Program hiyerarşi renkleri */
+.data-table tr.level-1 td {
+  background: rgba(30, 58, 95, 0.08);
+  font-weight: 700;
+  border-top: 2px solid rgba(30, 58, 95, 0.15);
+  border-bottom: 1px solid rgba(30, 58, 95, 0.10);
+}
+.data-table tr.level-1 td.right { color: var(--primary); }
+.data-table tr.level-1:hover td { background: rgba(30, 58, 95, 0.13); }
 
-.data-table tr.level-2 td { background: rgba(184, 134, 61, 0.04); font-weight: 500; }
+.data-table tr.level-2 td {
+  background: rgba(184, 134, 61, 0.06);
+  font-weight: 600;
+  border-top: 1px solid rgba(184, 134, 61, 0.12);
+}
+.data-table tr.level-2 td.right { color: var(--accent); }
+.data-table tr.level-2:hover td { background: rgba(184, 134, 61, 0.12); }
 
+.data-table tr.level-3 td { background: rgba(47, 107, 72, 0.04); font-weight: 500; }
+.data-table tr.level-3:hover td { background: rgba(47, 107, 72, 0.09); }
+
+.data-table tr.level-4 td, .data-table tr.level-5 td { background: transparent; }
 .data-table tr:hover td { background: var(--surface-2); }
-.data-table tr.level-1:hover td { background: var(--highlight-soft); }
+
+/* Collapse/expand toggle */
+.collapse-toggle {
+  cursor: pointer;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.collapse-toggle .toggle-icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  font-size: 10px;
+  border-radius: 3px;
+  background: rgba(30,58,95,0.12);
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+.data-table tr.level-2 .toggle-icon { background: rgba(184,134,61,0.18); }
+.data-table tr.collapsed-hidden { display: none; }
 
 /* FORM */
 .form-row {
@@ -813,10 +852,29 @@ body.view-mode .lock-status * {
 
     <div class="section">
       <div class="section-header">
-        <h2 class="section-title">Kümülatif Finansman İhtiyacı</h2>
+        <h2 class="section-title">Aylık Nakit Akış (USD)</h2>
+        <span style="font-size: 11px; color: var(--text-muted);">Fatura kuru ile çevrilen gerçek USD değerleri</span>
+      </div>
+      <div class="chart-container">
+        <canvas id="cashflowUsdChart"></canvas>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">Kümülatif Finansman İhtiyacı (TL)</h2>
       </div>
       <div class="chart-container">
         <canvas id="financingChart"></canvas>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">Kümülatif Finansman İhtiyacı (USD)</h2>
+      </div>
+      <div class="chart-container">
+        <canvas id="financingUsdChart"></canvas>
       </div>
     </div>
   </section>
@@ -923,6 +981,7 @@ body.view-mode .lock-status * {
         <table class="data-table" id="invoiceMainTable">
           <thead>
             <tr>
+              <th>Hesap Kodu</th>
               <th>Fatura No</th>
               <th>Cari Adı</th>
               <th class="center">F.Tarihi</th>
@@ -1262,11 +1321,11 @@ body.view-mode .lock-status * {
   <div class="modal">
     <h3 class="modal-title" id="budgetModalTitle">Bütçe Kalemi Ekle</h3>
     <div class="form-row form-row-2">
-      <div class="form-field"><label>Hesap Kodu</label><input type="text" id="bm-code" placeholder="ör. 150.02.02.01"></div>
+      <div class="form-field"><label>Hesap Kodu *</label><input type="text" id="bm-code" placeholder="ör. 150.02.02.01"></div>
       <div class="form-field"><label>Seviye</label>
-        <select id="bm-level">
+        <select id="bm-level" onchange="onBudgetLevelChange()">
           <option value="1">1 - Ana Kategori</option>
-          <option value="2">2 - Alt Kategori</option>
+          <option value="2">2 - Ara Kategori</option>
           <option value="3">3</option>
           <option value="4">4</option>
           <option value="5" selected>5 - Detay Kalem</option>
@@ -1274,34 +1333,41 @@ body.view-mode .lock-status * {
       </div>
     </div>
     <div class="form-row">
-      <div class="form-field"><label>Kalem Adı</label><input type="text" id="bm-name"></div>
+      <div class="form-field"><label>Kalem Adı *</label><input type="text" id="bm-name"></div>
     </div>
-    <div class="form-row">
+    <div class="form-row form-row-2" id="bm-type-row">
       <div class="form-field"><label>Tedarikçi / Not</label><input type="text" id="bm-supplier"></div>
-    </div>
-    <div class="form-row form-row-2">
-      <div class="form-field"><label>Kalem Tipi (kategori)</label>
+      <div class="form-field"><label>Kalem Tipi</label>
         <select id="bm-materialType"></select>
       </div>
-      <div class="form-field"><label>&nbsp;</label>
-        <div style="font-size: 11px; color: var(--text-muted); padding-top: 8px;">Özet'teki kategori kırılımını besler</div>
-      </div>
     </div>
-    <div class="form-row form-row-3">
-      <div class="form-field"><label>Miktar</label><input type="number" id="bm-qty" step="0.01"></div>
-      <div class="form-field"><label>Birim</label><input type="text" id="bm-unit" placeholder="m²/m³/adet/lump"></div>
-      <div class="form-field">
-        <label>Birim Fiyat</label>
-        <div style="display: flex; gap: 4px;">
-          <input type="number" id="bm-unitPrice" step="0.01" style="flex: 1;">
-          <select id="bm-currency" style="width: 70px; flex-shrink: 0;">
-            <option value="USD">USD</option>
-            <option value="TRY">TRY</option>
-          </select>
+
+    <!-- Fiyat bölümü — seviye 1 seçilince gizlenir -->
+    <div id="bm-price-section">
+      <div class="form-row form-row-3">
+        <div class="form-field"><label>Miktar</label><input type="number" id="bm-qty" step="0.01"></div>
+        <div class="form-field"><label>Birim</label><input type="text" id="bm-unit" placeholder="m²/m³/adet/lump"></div>
+        <div class="form-field">
+          <label>Birim Fiyat</label>
+          <div style="display: flex; gap: 4px;">
+            <input type="number" id="bm-unitPrice" step="0.01" style="flex: 1;">
+            <select id="bm-currency" style="width: 70px; flex-shrink: 0;">
+              <option value="USD">USD</option>
+              <option value="TRY">TRY</option>
+            </select>
+          </div>
         </div>
-        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Para birimi seç (Ana kategorilere fiyat girme — alt kalemlerden toplanır)</div>
       </div>
     </div>
+
+    <!-- Ana kategori notu -->
+    <div id="bm-parent-note" style="display:none; padding: 10px 14px; border-radius: 6px;
+      background: rgba(184,134,61,0.10); border: 1px solid rgba(184,134,61,0.35);
+      font-size: 12px; color: #7a5a1a; margin-bottom: 12px;">
+      📁 Ana kategori — fiyat girilmez. Alt kalemler eklenince toplam otomatik hesaplanır.
+    </div>
+
+    <input type="hidden" id="bm-isParent" value="0">
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeBudgetModal()">İptal</button>
       <button class="btn btn-primary" onclick="saveBudgetItem()">Kaydet</button>
@@ -2490,6 +2556,25 @@ function fmtNum(n, dec = 2) {
   if (n === null || n === undefined || isNaN(n)) return '—';
   return new Intl.NumberFormat('tr-TR', { minimumFractionDigits: dec, maximumFractionDigits: dec }).format(n);
 }
+
+// Hem "12345,67" hem "12345.67" hem "12.345,67" formatlarını parse eder
+function parseDecimal(v) {
+  if (v === null || v === undefined) return 0;
+  const s = String(v).trim();
+  if (!s) return 0;
+  // Virgül ve nokta her ikisi de varsa: hangisi son geliyorsa o ondalık ayracı
+  const lastComma = s.lastIndexOf(',');
+  const lastDot   = s.lastIndexOf('.');
+  let normalized;
+  if (lastComma > lastDot) {
+    // Türkçe format: 12.345,67 → nokta binlik, virgül ondalık
+    normalized = s.replace(/\./g, '').replace(',', '.');
+  } else {
+    // İngilizce format: 12,345.67 → virgül binlik, nokta ondalık
+    normalized = s.replace(/,/g, '');
+  }
+  return parseFloat(normalized) || 0;
+}
 function fmtDate(d) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('tr-TR');
@@ -2610,13 +2695,22 @@ function getBudgetItemTotalUsd(b) {
 }
 
 // Sadece yaprak kalem için (kendi miktar × birim fiyat, currency dönüşümlü)
+// qty girilmemişse (0) ve unitPrice varsa → lump sum (1 adet) kabul edilir
 function getLeafItemUsd(b) {
-  const total = (b.qty || 0) * (b.unitPrice || 0);
+  const qty = (b.qty && b.qty > 0) ? b.qty : (b.unitPrice > 0 ? 1 : 0);
+  const total = qty * (b.unitPrice || 0);
   if (b.currency === 'TRY') {
     const fx = getBudgetItemFx(b);
     return fx > 0 ? total / fx : 0;
   }
   return total;
+}
+
+function getLeafItemTry(b) {
+  const qty = (b.qty && b.qty > 0) ? b.qty : (b.unitPrice > 0 ? 1 : 0);
+  const total = qty * (b.unitPrice || 0);
+  if (b.currency === 'TRY') return total;
+  return total * getBudgetItemFx(b);
 }
 
 // Bütçe kalemi için referans FX kuru
@@ -2642,13 +2736,6 @@ function getBudgetItemTotalTry(b) {
   return getLeafItemTry(b);
 }
 
-function getLeafItemTry(b) {
-  const total = (b.qty || 0) * (b.unitPrice || 0);
-  if (b.currency === 'TRY') {
-    return total;
-  }
-  return total * getBudgetItemFx(b);
-}
 
 // Bir ana kategorinin alt kalemlerinin iş programı tarihlerinden başlangıç/bitiş türet
 function getDerivedProgramRange(b) {
@@ -2840,6 +2927,52 @@ function computeItemProgress(code, budgetUsd) {
   return { physicalPct, financialPct, variancePct, spi, eac, etaDate, planned, actual, dr };
 }
 
+// ============================================================
+// COLLAPSE / EXPAND — Hiyerarşik tablolar için
+// ============================================================
+const _collapsedRows = new Set(); // kapalı satır ID'leri
+
+function toggleCollapse(parentId, parentCode) {
+  if (_collapsedRows.has(parentId)) {
+    _collapsedRows.delete(parentId);
+  } else {
+    _collapsedRows.add(parentId);
+  }
+  // Sayfayı yeniden render etmek yerine sadece DOM'u güncelle
+  const isCollapsed = _collapsedRows.has(parentId);
+  // Tüm child satırları bul ve gizle/göster
+  const allRows = document.querySelectorAll('[data-parent-codes]');
+  allRows.forEach(row => {
+    const parentCodes = row.getAttribute('data-parent-codes').split(',');
+    if (parentCodes.includes(parentCode)) {
+      row.classList.toggle('collapsed-hidden', isCollapsed);
+    }
+  });
+  // Toggle ikonunu güncelle
+  const toggle = document.querySelector(`[data-toggle-id="${parentId}"] .toggle-icon`);
+  if (toggle) toggle.textContent = isCollapsed ? '▶' : '▼';
+}
+
+// Bir satırın tüm üst kod'larını döndür
+function getParentCodes(code) {
+  const parts = code.split('.');
+  const codes = [];
+  for (let i = 1; i < parts.length; i++) {
+    codes.push(parts.slice(0, i).join('.'));
+  }
+  return codes;
+}
+
+// Bir bütçe kaleminin doğrudan alt kalemi var mı?
+function hasChildren(b) {
+  return state.budget.some(other => {
+    if (other.id === b.id) return false;
+    if (!other.code.startsWith(b.code + '.')) return false;
+    const suffix = other.code.substring(b.code.length + 1);
+    return !suffix.includes('.');
+  });
+}
+
 // Toplam proje seviyesinde ilerleme
 function computeOverallProgress() {
   const target = getTargetDate();
@@ -2960,6 +3093,8 @@ function computeCategoryBreakdown() {
 // ============================================================
 // RENDER
 // ============================================================
+// Özet sekmesindeki TL + USD nakit akış ve finansman tabloları
+
 function renderAll() {
   renderHeader();
   renderTargetDateInput();
@@ -3298,95 +3433,74 @@ function renderBudgetTable() {
   tbody.innerHTML = '';
   const sorted = [...state.budget].sort((a, b) => a.code.localeCompare(b.code));
   const fx = getCurrentFx();
-
-  // Toplam satırı için
-  let totalBaseUsd = 0, totalBaseTry = 0;
-  let totalRevUsd = 0, totalRevTry = 0;
-  let totalActUsd = 0, totalActTry = 0;
-  let totalRemUsd = 0, totalRemTry = 0;
+  let totalBaseUsd=0, totalBaseTry=0, totalRevUsd=0, totalRevTry=0;
+  let totalActUsd=0, totalActTry=0, totalRemUsd=0, totalRemTry=0;
 
   sorted.forEach(b => {
     const isLeaf = isBudgetLeaf(b);
+    const hasKids = hasChildren(b);
     const baseUsd = getBudgetItemTotalUsd(b);
     const baseTry = getBudgetItemTotalTry(b);
     const actUsd  = getBudgetItemActualUsd(b);
     const actTry  = getBudgetItemActualTry(b);
-    const revUsd  = b.revisedBudgetUsd != null ? b.revisedBudgetUsd : (isLeaf ? null : null);
-    const effUsd  = revUsd != null ? revUsd : baseUsd; // efektif bütçe (revize varsa revize, yoksa baz)
+    const revUsd  = b.revisedBudgetUsd != null ? b.revisedBudgetUsd : null;
+    const effUsd  = revUsd != null ? revUsd : baseUsd;
     const effTry  = revUsd != null ? revUsd * fx : baseTry;
     const remUsd  = effUsd - actUsd;
     const remTry  = effTry - actTry;
 
-    // Toplam (sadece ana kök kalemler çift sayılmaması için tüm kalemlerin ekliyoruz, hiyerarşi ekranda)
-    if (!isBudgetLeaf(b)) {
-      // Toplam satırına sadece kök (level 1) ana kategorileri ekle
-      if (b.level === 1) {
-        totalBaseUsd += baseUsd; totalBaseTry += baseTry;
-        totalActUsd  += actUsd;  totalActTry  += actTry;
-        const revE = b.revisedBudgetUsd != null ? b.revisedBudgetUsd : baseUsd;
-        totalRevUsd  += revE;    totalRevTry  += revE * fx;
-        totalRemUsd  += remUsd;  totalRemTry  += remTry;
-      }
-    } else if (!sorted.some(p => p.id !== b.id && b.code.startsWith(p.code + '.') && p.level === 1)) {
-      // Kök level 1 yoksa yaprak direkt topla
+    if (b.level === 1) {
       totalBaseUsd += baseUsd; totalBaseTry += baseTry;
-      totalActUsd  += actUsd;  totalActTry  += actTry;
-      totalRevUsd  += effUsd;  totalRevTry  += effTry;
-      totalRemUsd  += remUsd;  totalRemTry  += remTry;
+      const revE = revUsd != null ? revUsd : baseUsd;
+      totalRevUsd += revE; totalRevTry += revE * fx;
+      totalActUsd += actUsd; totalActTry += actTry;
+      totalRemUsd += remUsd; totalRemTry += remTry;
     }
 
-    // Durum
-    let statusHtml;
     const asilmis = actUsd > effUsd + 0.01;
     const revize  = revUsd != null;
-    const tamam   = actUsd > 0 && !asilmis;
-    if (asilmis) {
-      statusHtml = `<span class="badge" style="background:#fdecea;color:#a44132;border:1px solid #f5c6c6;">⚠ Aşım</span>`;
-    } else if (revize) {
-      statusHtml = `<span class="badge" style="background:rgba(184,134,61,0.15);color:#7a5a1a;border:1px solid rgba(184,134,61,0.4);">🔄 Revize</span>`;
-    } else if (tamam) {
-      statusHtml = `<span class="badge badge-success">✓</span>`;
-    } else {
-      statusHtml = `<span style="color: var(--text-muted); font-size: 11px;">—</span>`;
-    }
+    let statusHtml;
+    if (asilmis) statusHtml = `<span class="badge" style="background:#fdecea;color:#a44132;border:1px solid #f5c6c6;">⚠ Aşım</span>`;
+    else if (revize) statusHtml = `<span class="badge" style="background:rgba(184,134,61,0.15);color:#7a5a1a;border:1px solid rgba(184,134,61,0.4);">🔄 Revize</span>`;
+    else if (actUsd > 0) statusHtml = `<span class="badge badge-success">✓</span>`;
+    else statusHtml = `<span style="color:var(--text-muted);font-size:11px;">—</span>`;
 
     const tr = document.createElement('tr');
     tr.className = `level-${b.level}`;
-    if (!isLeaf) tr.style.fontWeight = '600';
     if (asilmis) tr.style.background = 'rgba(164,65,50,0.04)';
     else if (revize) tr.style.background = 'rgba(184,134,61,0.04)';
 
-    const indent = '&nbsp;'.repeat((b.level - 1) * 3);
-    const typeLabel = getCategoryLabel(b.materialType);
-    const ccy = b.currency || 'USD';
-    const ccyBadge = isLeaf
-      ? `<span style="font-size:9px;color:var(--text-muted);margin-left:3px;">${ccy === 'TRY' ? 'TL' : 'USD'}</span>`
+    const parentCodes = getParentCodes(b.code);
+    if (parentCodes.length > 0) {
+      tr.setAttribute('data-parent-codes', parentCodes.join(','));
+      const shouldHide = parentCodes.some(pc => {
+        const parent = sorted.find(x => x.code === pc);
+        return parent && _collapsedRows.has(parent.id);
+      });
+      if (shouldHide) tr.classList.add('collapsed-hidden');
+    }
+
+    const isCollapsed = _collapsedRows.has(b.id);
+    const toggleHtml = hasKids
+      ? `<span class="collapse-toggle" data-toggle-id="${b.id}" onclick="toggleCollapse('${b.id}','${b.code}')"><span class="toggle-icon">${isCollapsed ? '▶' : '▼'}</span></span> `
       : '';
-    const qtyCell   = isLeaf ? (b.qty ? fmtNum(b.qty, 0) : '—') : '<span style="color:var(--text-muted);font-style:italic;">∑</span>';
+
+    const indent = '&nbsp;'.repeat((b.level - 1) * 4);
+    const ccy = b.currency || 'USD';
+    const ccyBadge = isLeaf ? `<span style="font-size:9px;color:var(--text-muted);margin-left:3px;">${ccy === 'TRY' ? 'TL' : 'USD'}</span>` : '';
+    const effectiveQty = (b.qty && b.qty > 0) ? b.qty : (b.unitPrice > 0 ? 1 : 0);
+    const qtyCell   = isLeaf ? (effectiveQty ? fmtNum(effectiveQty,0) + ((!b.qty || b.qty===0) && b.unitPrice>0 ? '<span style="font-size:9px;color:var(--text-muted);margin-left:2px;">lump</span>' : '') : '—') : '<span style="color:var(--text-muted);font-size:11px;">∑</span>';
     const unitCell  = isLeaf ? (b.unit || '—') : '—';
-    const priceCell = isLeaf
-      ? `${b.unitPrice ? fmtNum(b.unitPrice, 0) : '—'}${ccyBadge}`
-      : '<span style="color:var(--text-muted);font-style:italic;">alt kalemler</span>';
-
-    // Revize sütunu
-    const revUsdCell = revUsd != null
-      ? `<span style="color:var(--accent);font-weight:600;">${fmtUSD(revUsd)}</span>`
-      : '<span style="color:var(--text-muted);">—</span>';
-    const revTryCell = revUsd != null
-      ? `<span style="color:var(--accent);">${fmtTL(revUsd * fx)}</span>`
-      : '<span style="color:var(--text-muted);">—</span>';
-
-    // Kalan rengi
-    const remColor = remUsd < -0.01 ? 'color:#a44132;font-weight:600;' : (remUsd < effUsd * 0.1 ? 'color:#b86800;' : '');
-
-    // Revize butonu: sadece yaprak veya ana kategoride
-    const revBtn = `<button class="btn btn-ghost" style="font-size:11px;padding:2px 6px;" onclick="reviseBudgetItem('${b.id}')" title="Revize bütçe gir">Revize</button>`;
+    const priceCell = isLeaf ? `${b.unitPrice ? fmtNum(b.unitPrice,0) : '—'}${ccyBadge}` : '<span style="color:var(--text-muted);font-size:11px;">alt kalemler</span>';
+    const revUsdCell = revUsd != null ? `<span style="color:var(--accent);font-weight:600;">${fmtUSD(revUsd)}</span>` : '<span style="color:var(--text-muted);">—</span>';
+    const revTryCell = revUsd != null ? `<span style="color:var(--accent);">${fmtTL(revUsd*fx)}</span>` : '<span style="color:var(--text-muted);">—</span>';
+    const remColor = remUsd < -0.01 ? 'color:#a44132;font-weight:600;' : (remUsd < effUsd*0.1 ? 'color:#b86800;' : '');
 
     tr.innerHTML = `
       <td class="mono" style="font-size:12px;">${b.code}</td>
-      <td>${indent}${b.name}</td>
+      <td>${indent}${toggleHtml}${b.name}</td>
       <td style="font-size:12px;">${b.supplier || '—'}</td>
-      <td class="center"><span class="tag">${typeLabel}</span></td>
+      <td class="center"><span class="tag">${getCategoryLabel(b.materialType)}</span></td>
       <td class="right">${qtyCell}</td>
       <td class="center">${unitCell}</td>
       <td class="right">${priceCell}</td>
@@ -3394,74 +3508,113 @@ function renderBudgetTable() {
       <td class="right" style="color:var(--text-muted);">${fmtTL(baseTry)}</td>
       <td class="right" style="background:rgba(184,134,61,0.04);">${revUsdCell}</td>
       <td class="right" style="background:rgba(184,134,61,0.04);">${revTryCell}</td>
-      <td class="right" style="color:#2f6b48;">${actUsd > 0 ? fmtUSD(actUsd) : '—'}</td>
-      <td class="right" style="color:#2f6b48;">${actTry > 0 ? fmtTL(actTry) : '—'}</td>
+      <td class="right" style="color:#2f6b48;">${actUsd>0?fmtUSD(actUsd):'—'}</td>
+      <td class="right" style="color:#2f6b48;">${actTry>0?fmtTL(actTry):'—'}</td>
       <td class="right" style="${remColor}">${fmtUSD(remUsd)}</td>
       <td class="right" style="${remColor}">${fmtTL(remTry)}</td>
       <td class="center">${statusHtml}</td>
       <td class="center" style="white-space:nowrap;">
         <button class="btn btn-icon btn-ghost" onclick="editBudgetItem('${b.id}')">Düzenle</button>
         <button class="btn btn-danger" onclick="deleteBudgetItem('${b.id}')">Sil</button>
-        ${revBtn}
+        <button class="btn btn-ghost" style="font-size:11px;padding:2px 6px;" onclick="reviseBudgetItem('${b.id}')">Revize</button>
       </td>
     `;
     tbody.appendChild(tr);
   });
 
-  // Toplam satırı
   if (sorted.length > 0) {
     const totRemUsd = totalRevUsd - totalActUsd;
     const totRemTry = totalRevTry - totalActTry;
     const tr = document.createElement('tr');
-    tr.style.cssText = 'font-weight:700; border-top:2px solid var(--border-strong); background:var(--surface-2);';
+    tr.style.cssText = 'font-weight:700;border-top:2px solid var(--border-strong);background:var(--surface-2);';
     tr.innerHTML = `
       <td colspan="7" style="font-weight:700;">PROJE TOPLAMI</td>
       <td class="right">${fmtUSD(totalBaseUsd)}</td>
       <td class="right" style="color:var(--text-muted);">${fmtTL(totalBaseTry)}</td>
-      <td class="right" style="background:rgba(184,134,61,0.04);color:var(--accent);">${totalRevUsd !== totalBaseUsd ? fmtUSD(totalRevUsd) : '—'}</td>
-      <td class="right" style="background:rgba(184,134,61,0.04);color:var(--accent);">${totalRevTry !== totalBaseTry ? fmtTL(totalRevTry) : '—'}</td>
-      <td class="right" style="color:#2f6b48;">${totalActUsd > 0 ? fmtUSD(totalActUsd) : '—'}</td>
-      <td class="right" style="color:#2f6b48;">${totalActTry > 0 ? fmtTL(totalActTry) : '—'}</td>
-      <td class="right" style="${totRemUsd < 0 ? 'color:#a44132;font-weight:700;' : ''}">${fmtUSD(totRemUsd)}</td>
-      <td class="right" style="${totRemTry < 0 ? 'color:#a44132;font-weight:700;' : ''}">${fmtTL(totRemTry)}</td>
+      <td class="right" style="background:rgba(184,134,61,0.04);color:var(--accent);">${totalRevUsd!==totalBaseUsd?fmtUSD(totalRevUsd):'—'}</td>
+      <td class="right" style="background:rgba(184,134,61,0.04);color:var(--accent);">${totalRevTry!==totalBaseTry?fmtTL(totalRevTry):'—'}</td>
+      <td class="right" style="color:#2f6b48;">${totalActUsd>0?fmtUSD(totalActUsd):'—'}</td>
+      <td class="right" style="color:#2f6b48;">${totalActTry>0?fmtTL(totalActTry):'—'}</td>
+      <td class="right" style="${totRemUsd<0?'color:#a44132;font-weight:700;':''}">${fmtUSD(totRemUsd)}</td>
+      <td class="right" style="${totRemTry<0?'color:#a44132;font-weight:700;':''}">${fmtTL(totRemTry)}</td>
       <td colspan="2"></td>
     `;
     tbody.appendChild(tr);
   }
 }
-
 function renderProgramTable() {
   const tbody = document.getElementById('programTableBody');
   tbody.innerHTML = '';
   
-  // Sadece yaprak kalemler (ana kategoriler iş programına çekilmez)
-  const leaves = getLeafBudgetItems().sort((a, b) => a.code.localeCompare(b.code));
+  // Tüm kalemler — seviye 1 dahil
+  // Seviye 1: tarihleri alt kalemlerden türetilir, Zamanla butonu yok
+  // Diğerleri: yaprak ise kendi programı, yaprak değilse türetilmiş
+  const allItems = [...state.budget].sort((a, b) => a.code.localeCompare(b.code));
   
-  const items = programFilter === 'unscheduled'
-    ? leaves.filter(b => !state.program[b.id])
-    : leaves;
+  const filtered = programFilter === 'unscheduled'
+    ? allItems.filter(b => {
+        if (b.level === 1) return false; // ana kategoriler "atanmamış" filtresinde gösterilmez
+        return isBudgetLeaf(b) && !state.program[b.id];
+      })
+    : allItems;
   
-  items.forEach(b => {
-    const prog = state.program[b.id] || {};
+  filtered.forEach(b => {
+    const isLevel1 = b.level === 1;
+    const isLeaf = isBudgetLeaf(b);
+    const hasKids = hasChildren(b);
+    
+    let prog, derivedNote = '';
+    if (isLevel1 || !isLeaf) {
+      const derived = getDerivedProgramRange(b);
+      prog = derived || {};
+      if (derived) derivedNote = ' <span style="font-size:10px;color:var(--text-muted);">↑ alt kalemlerden</span>';
+    } else {
+      prog = state.program[b.id] || {};
+    }
+    
     const months = (prog.start && prog.end) ? getMonthsInRange(prog.start, prog.end).length : 0;
-    const indent = '&nbsp;'.repeat((b.level - 1) * 3);
     const tr = document.createElement('tr');
+    tr.className = `level-${b.level}`;
+
+    // Collapse desteği
+    const allSorted = [...state.budget].sort((a, b) => a.code.localeCompare(b.code));
+    const parentCodes = getParentCodes(b.code);
+    if (parentCodes.length > 0) {
+      tr.setAttribute('data-parent-codes', parentCodes.join(','));
+      const shouldHide = parentCodes.some(pc => {
+        const parent = allSorted.find(x => x.code === pc);
+        return parent && _collapsedRows.has(parent.id);
+      });
+      if (shouldHide) tr.classList.add('collapsed-hidden');
+    }
+
+    const isCollapsed = _collapsedRows.has(b.id);
+    const toggleHtml = hasKids
+      ? `<span class="collapse-toggle" data-toggle-id="${b.id}" onclick="toggleCollapse('${b.id}','${b.code}')"><span class="toggle-icon">${isCollapsed ? '▶' : '▼'}</span></span> `
+      : '';
+
+    const indent = '&nbsp;'.repeat((b.level - 1) * 4);
+    const actionCell = (isLevel1 || !isLeaf)
+      ? '—'
+      : `<button class="btn btn-icon btn-ghost" onclick="openProgramModal('${b.id}')">Zamanla</button>`;
+    const startCell = prog.start
+      ? fmtMonth(prog.start) + derivedNote
+      : (isLevel1 ? '—' : '<span class="badge badge-warning">Atanmamış</span>');
+    
     tr.innerHTML = `
       <td class="mono">${b.code}</td>
-      <td>${indent}${b.name}</td>
-      <td class="center">${prog.start ? fmtMonth(prog.start) : '<span class="badge badge-warning">Atanmamış</span>'}</td>
+      <td>${indent}${toggleHtml}${b.name}</td>
+      <td class="center">${startCell}</td>
       <td class="center">${prog.end ? fmtMonth(prog.end) : '—'}</td>
       <td class="center">${months || '—'}</td>
-      <td>${prog.curve ? labelCurve(prog.curve) : '—'}</td>
+      <td>${(!isLevel1 && isLeaf && prog.curve) ? labelCurve(prog.curve) : '—'}</td>
       <td class="right">${fmtUSD(getBudgetItemTotalUsd(b))}</td>
-      <td class="center">
-        <button class="btn btn-icon btn-ghost" onclick="openProgramModal('${b.id}')">Zamanla</button>
-      </td>
+      <td class="center">${actionCell}</td>
     `;
     tbody.appendChild(tr);
   });
   
-  if (items.length === 0) {
+  if (filtered.length === 0) {
     tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Henüz bütçe kalemi yok veya tüm kalemler zamanlandı</td></tr>';
   }
 }
@@ -3512,12 +3665,17 @@ function renderInvoiceTable() {
       ? `<button class="btn btn-icon btn-ghost" onclick="viewInvoiceAttachment('${inv.id}')" title="Faturayı görüntüle" style="padding: 2px 6px;">📎</button>` : '';
     
     let statusBadge;
-    if (c.overallStatus === 'paid') statusBadge = '<span class="badge badge-success">Ödendi</span>';
-    else if (c.overallStatus === 'partial') statusBadge = '<span class="badge badge-warning">Kısmi</span>';
-    else statusBadge = '<span class="badge badge-warning">Bekliyor</span>';
+    if (c.overallStatus === 'paid') {
+      statusBadge = `<span class="badge badge-success" style="cursor:pointer;" onclick="quickToggleInvoiceStatus('${inv.id}')" title="Tıkla → Bekliyor'a çevir">Ödendi ✓</span>`;
+    } else if (c.overallStatus === 'partial') {
+      statusBadge = `<span class="badge badge-warning" style="cursor:pointer;" onclick="quickToggleInvoiceStatus('${inv.id}')" title="Tıkla → Ödendi yap">Kısmi →</span>`;
+    } else {
+      statusBadge = `<span class="badge badge-warning" style="cursor:pointer;" onclick="quickToggleInvoiceStatus('${inv.id}')" title="Tıkla → Ödendi yap">Bekliyor →</span>`;
+    }
     
     const tr = document.createElement('tr');
     tr.innerHTML = `
+      <td class="mono">${inv.code || '—'}</td>
       <td class="mono">${inv.invoiceNo || '—'}</td>
       <td>${inv.supplier || '—'} ${attachBadge}</td>
       <td class="center">${fmtDate(inv.date)}</td>
@@ -3917,110 +4075,122 @@ function refreshCategoryDropdowns() {
 // CHARTS
 // ============================================================
 let cashflowChartInst = null;
+let cashflowUsdChartInst = null;
 let financingChartInst = null;
+let financingUsdChartInst = null;
 
 function renderCharts() {
   const cf = computeCashflow();
   const labels = cf.map(r => fmtMonth(r.month));
-  
+
+  // Ortak chart seçenekleri
+  const commonBarOpts = (fmtFn, symbol) => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { position: 'top', labels: { font: { family: 'IBM Plex Sans', size: 11 } } },
+      tooltip: {
+        callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmtFn(Math.abs(ctx.parsed.y))}` }
+      }
+    },
+    scales: {
+      x: { ticks: { font: { family: 'IBM Plex Mono', size: 10 } } },
+      y: { ticks: { callback: (v) => new Intl.NumberFormat('tr-TR', { notation: 'compact' }).format(v) + symbol, font: { family: 'IBM Plex Mono', size: 10 } } }
+    }
+  });
+
+  const commonLineOpts = (fmtFn, label, symbol) => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: { label: (ctx) => `Bakiye: ${fmtFn(ctx.parsed.y)} (Finansman: ${fmtFn(-ctx.parsed.y)})` }
+      }
+    },
+    scales: {
+      x: { ticks: { font: { family: 'IBM Plex Mono', size: 10 } } },
+      y: { ticks: { callback: (v) => new Intl.NumberFormat('tr-TR', { notation: 'compact' }).format(v) + symbol, font: { family: 'IBM Plex Mono', size: 10 } } }
+    }
+  });
+
+  // ── TL Nakit Akış ──
   if (cashflowChartInst) cashflowChartInst.destroy();
-  const ctx1 = document.getElementById('cashflowChart').getContext('2d');
-  cashflowChartInst = new Chart(ctx1, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'Plan Harcama',
-          data: cf.map(r => -r.planTry),
-          backgroundColor: 'rgba(30, 58, 95, 0.55)',
-          stack: 'outflow_plan'
-        },
-        {
-          label: 'Gerç. Harcama',
-          data: cf.map(r => -r.actualTry),
-          backgroundColor: 'rgba(164, 65, 50, 0.7)',
-          stack: 'outflow_actual'
-        },
-        {
-          label: 'Plan Tahsilat',
-          data: cf.map(r => r.collectionPlanTry),
-          backgroundColor: 'rgba(47, 107, 72, 0.35)',
-          stack: 'inflow_plan'
-        },
-        {
-          label: 'Gerç. Tahsilat',
-          data: cf.map(r => r.collectionActualTry),
-          backgroundColor: 'rgba(47, 107, 72, 0.85)',
-          stack: 'inflow_actual'
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'top', labels: { font: { family: 'IBM Plex Sans', size: 11 } } },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => `${ctx.dataset.label}: ${fmtTL(Math.abs(ctx.parsed.y))}`
-          }
-        }
+  const ctx1 = document.getElementById('cashflowChart');
+  if (ctx1) {
+    cashflowChartInst = new Chart(ctx1.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Plan Harcama',   data: cf.map(r => -r.planTry),            backgroundColor: 'rgba(30,58,95,0.55)',   stack: 'outflow_plan' },
+          { label: 'Gerç. Harcama',  data: cf.map(r => -r.actualTry),          backgroundColor: 'rgba(164,65,50,0.7)',   stack: 'outflow_actual' },
+          { label: 'Plan Tahsilat',  data: cf.map(r => r.collectionPlanTry),   backgroundColor: 'rgba(47,107,72,0.35)',  stack: 'inflow_plan' },
+          { label: 'Gerç. Tahsilat', data: cf.map(r => r.collectionActualTry), backgroundColor: 'rgba(47,107,72,0.85)', stack: 'inflow_actual' }
+        ]
       },
-      scales: {
-        x: { ticks: { font: { family: 'IBM Plex Mono', size: 10 } } },
-        y: { 
-          ticks: { 
-            callback: (v) => new Intl.NumberFormat('tr-TR', { notation: 'compact' }).format(v) + ' ₺',
-            font: { family: 'IBM Plex Mono', size: 10 }
-          } 
-        }
-      }
-    }
-  });
-  
+      options: commonBarOpts(fmtTL, ' ₺')
+    });
+  }
+
+  // ── USD Nakit Akış ──
+  if (cashflowUsdChartInst) cashflowUsdChartInst.destroy();
+  const ctx2 = document.getElementById('cashflowUsdChart');
+  if (ctx2) {
+    cashflowUsdChartInst = new Chart(ctx2.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Plan Harcama',   data: cf.map(r => -r.planUsd),            backgroundColor: 'rgba(30,58,95,0.55)',   stack: 'outflow_plan' },
+          { label: 'Gerç. Harcama',  data: cf.map(r => -r.actualUsd),          backgroundColor: 'rgba(164,65,50,0.7)',   stack: 'outflow_actual' },
+          { label: 'Plan Tahsilat',  data: cf.map(r => r.collectionPlanUsd),   backgroundColor: 'rgba(47,107,72,0.35)',  stack: 'inflow_plan' },
+          { label: 'Gerç. Tahsilat', data: cf.map(r => r.collectionActualUsd), backgroundColor: 'rgba(47,107,72,0.85)', stack: 'inflow_actual' }
+        ]
+      },
+      options: commonBarOpts(fmtUSD, ' $')
+    });
+  }
+
+  // ── TL Kümülatif Finansman ──
   if (financingChartInst) financingChartInst.destroy();
-  const ctx2 = document.getElementById('financingChart').getContext('2d');
-  financingChartInst = new Chart(ctx2, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Kümülatif Nakit (TL)',
-        data: cf.map(r => r.cumulativeTry),
-        borderColor: '#1e3a5f',
-        backgroundColor: (ctx) => {
-          const v = ctx.parsed?.y;
-          return v < 0 ? 'rgba(164, 65, 50, 0.15)' : 'rgba(47, 107, 72, 0.15)';
-        },
-        fill: true,
-        tension: 0.3,
-        pointRadius: 2,
-        borderWidth: 2
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => `Bakiye: ${fmtTL(ctx.parsed.y)} (Finansman: ${fmtTL(-ctx.parsed.y)})`
-          }
-        }
+  const ctx3 = document.getElementById('financingChart');
+  if (ctx3) {
+    financingChartInst = new Chart(ctx3.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Kümülatif Nakit (TL)',
+          data: cf.map(r => r.cumulativeTry),
+          borderColor: '#1e3a5f',
+          backgroundColor: (ctx) => (ctx.parsed?.y < 0) ? 'rgba(164,65,50,0.15)' : 'rgba(47,107,72,0.15)',
+          fill: true, tension: 0.3, pointRadius: 2, borderWidth: 2
+        }]
       },
-      scales: {
-        x: { ticks: { font: { family: 'IBM Plex Mono', size: 10 } } },
-        y: { 
-          ticks: { 
-            callback: (v) => new Intl.NumberFormat('tr-TR', { notation: 'compact' }).format(v) + ' ₺',
-            font: { family: 'IBM Plex Mono', size: 10 }
-          } 
-        }
-      }
-    }
-  });
+      options: commonLineOpts(fmtTL, 'Kümülatif TL', ' ₺')
+    });
+  }
+
+  // ── USD Kümülatif Finansman ──
+  if (financingUsdChartInst) financingUsdChartInst.destroy();
+  const ctx4 = document.getElementById('financingUsdChart');
+  if (ctx4) {
+    financingUsdChartInst = new Chart(ctx4.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Kümülatif Nakit (USD)',
+          data: cf.map(r => r.cumulativeUsd),
+          borderColor: '#b8863d',
+          backgroundColor: (ctx) => (ctx.parsed?.y < 0) ? 'rgba(164,65,50,0.15)' : 'rgba(47,107,72,0.15)',
+          fill: true, tension: 0.3, pointRadius: 2, borderWidth: 2
+        }]
+      },
+      options: commonLineOpts(fmtUSD, 'Kümülatif USD', ' $')
+    });
+  }
 }
 
 // ============================================================
@@ -4038,7 +4208,27 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   });
 });
 
-// Budget modal
+// Seviye değişince fiyat bölümü göster/gizle
+function onBudgetLevelChange() {
+  const level = parseInt(document.getElementById('bm-level').value);
+  const isParent = (level === 1);
+  _applyBudgetParentState(isParent);
+}
+
+function _applyBudgetParentState(isParent) {
+  document.getElementById('bm-isParent').value = isParent ? '1' : '0';
+  document.getElementById('bm-price-section').style.display = isParent ? 'none' : '';
+  document.getElementById('bm-parent-note').style.display   = isParent ? 'block' : 'none';
+  // Ana kategoride kalem tipi de gizlenir (alt kalemlerde farklı tipler olabilir)
+  const typeRow = document.getElementById('bm-type-row');
+  if (typeRow) typeRow.style.display = isParent ? 'none' : '';
+}
+
+// Eski uyumluluk
+function setBudgetType(type) { _applyBudgetParentState(type === 'parent'); }
+function onBudgetParentToggle() {}
+function setBudgetModalLeafState(isLeaf) { _applyBudgetParentState(!isLeaf); }
+
 function openBudgetModal() {
   if (!requireEdit()) return;
   editingBudgetId = null;
@@ -4053,7 +4243,7 @@ function openBudgetModal() {
   document.getElementById('bm-unit').value = '';
   document.getElementById('bm-unitPrice').value = '';
   document.getElementById('bm-currency').value = 'USD';
-  setBudgetModalLeafState(true); // yeni eklenen kalem her zaman leaf başlar
+  _applyBudgetParentState(false); // seviye 5 = detay kalem, fiyat açık
   document.getElementById('budgetModal').classList.add('active');
 }
 function closeBudgetModal() {
@@ -4069,52 +4259,18 @@ function editBudgetItem(id) {
   document.getElementById('bm-code').value = b.code;
   document.getElementById('bm-level').value = b.level;
   document.getElementById('bm-name').value = b.name;
-  document.getElementById('bm-supplier').value = b.supplier;
+  document.getElementById('bm-supplier').value = b.supplier || '';
   document.getElementById('bm-materialType').value = b.materialType || '';
   document.getElementById('bm-qty').value = b.qty || '';
-  document.getElementById('bm-unit').value = b.unit;
+  document.getElementById('bm-unit').value = b.unit || '';
   document.getElementById('bm-unitPrice').value = b.unitPrice || '';
   document.getElementById('bm-currency').value = b.currency || 'USD';
-  // Eğer kalemin alt kalemleri varsa miktar/fiyat alanlarını disable et
-  setBudgetModalLeafState(isBudgetLeaf(b));
+  // Seviye 1-2 veya altında kalem varsa ana kategori
+  const isParent = b.level === 1 || !isBudgetLeaf(b);
+  _applyBudgetParentState(isParent);
   document.getElementById('budgetModal').classList.add('active');
 }
 
-// Miktar/birim/fiyat alanlarını ana kategoriler için disable et
-function setBudgetModalLeafState(isLeaf) {
-  const fields = ['bm-qty', 'bm-unit', 'bm-unitPrice', 'bm-currency'];
-  fields.forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.disabled = !isLeaf;
-    el.style.opacity = isLeaf ? '1' : '0.35';
-    el.style.cursor = isLeaf ? '' : 'not-allowed';
-  });
-  
-  // Uyarı bloğu — mevcut değilse oluştur, varsa güncelle
-  let warningEl = document.getElementById('bm-leaf-warning');
-  if (!warningEl) {
-    warningEl = document.createElement('div');
-    warningEl.id = 'bm-leaf-warning';
-    warningEl.style.cssText = 'margin-bottom: 12px; padding: 10px 14px; border-radius: 6px; font-size: 12px;';
-    const formRows = document.querySelectorAll('#budgetModal .form-row');
-    // Son form-row'dan sonrasına ekle (miktar/birim/fiyat rowundan sonra)
-    const targetRow = formRows[formRows.length - 1];
-    if (targetRow && targetRow.parentNode) {
-      targetRow.parentNode.insertBefore(warningEl, targetRow.nextSibling);
-    }
-  }
-  
-  if (isLeaf) {
-    warningEl.style.display = 'none';
-  } else {
-    warningEl.style.display = 'block';
-    warningEl.style.background = 'rgba(184, 134, 61, 0.12)';
-    warningEl.style.border = '1px solid rgba(184, 134, 61, 0.4)';
-    warningEl.style.color = '#7a5a1a';
-    warningEl.innerHTML = '⚠ <strong>Bu bir ana kategori</strong> — alt kalemleri var. Miktar ve birim fiyat girilemez; toplam otomatik olarak tüm alt kalemlerden hesaplanır.';
-  }
-}
 
 async function saveBudgetItem() {
   const mt = document.getElementById('bm-materialType').value;
@@ -4123,10 +4279,13 @@ async function saveBudgetItem() {
   // Bu kod ile bir kalem zaten var mı kontrol et (alt kalemli mi)
   // Yeni eklenen kalem ise sonradan alt kalem eklenince otomatik ana olur
   // Düzenleme ise mevcut state'e bakarak ayırt et
-  let isCurrentlyLeaf = true;
+  // Ana kategori mi? hidden input'tan oku (setBudgetType tarafından set edilir)
+  const isParentChecked = document.getElementById('bm-isParent').value === '1';
+  let isCurrentlyLeaf = !isParentChecked;
+  // Düzenleme ise ve altında kalem varsa daima parent
   if (editingBudgetId) {
     const existing = state.budget.find(x => x.id === editingBudgetId);
-    if (existing) isCurrentlyLeaf = isBudgetLeaf(existing);
+    if (existing && !isBudgetLeaf(existing)) isCurrentlyLeaf = false;
   }
   
   const item = {
@@ -4158,6 +4317,30 @@ async function deleteBudgetItem(id) {
   if (!confirm('Bu kalem silinecek. Onaylıyor musun?')) return;
   state.budget = state.budget.filter(b => b.id !== id);
   delete state.program[id];
+  await saveState();
+  renderAll();
+}
+
+// Fatura listesinde tek tıkla ödendi/bekliyor değiştir
+async function quickToggleInvoiceStatus(id) {
+  if (!requireEdit()) return;
+  const inv = state.invoices.find(i => i.id === id);
+  if (!inv) return;
+  const c = calcInvoiceTotals(inv);
+  const today = new Date().toISOString().substring(0, 10);
+  
+  if (c.overallStatus === 'paid') {
+    // Ödendiden bekliyor'a çevir
+    if (!confirm('Tüm taksitler "Bekliyor" olarak işaretlensin mi?')) return;
+    inv.installments = (inv.installments || []).map(t => ({ ...t, status: 'pending', paidAmount: 0, paidDate: '' }));
+    inv.status = 'pending';
+  } else {
+    // Bekliyor/Kısmi'den ödendi'ye çevir — tüm taksitler ödenmiş say
+    if (!confirm('Tüm taksitler "Ödendi" olarak işaretlensin mi? Ödenen tutar = taksit tutarı, tarih = bugün olarak kaydedilir.')) return;
+    inv.installments = (inv.installments || [{ dueDate: inv.dueDate, amount: c.grandTotal, paidAmount: 0, paidDate: '', status: 'pending' }])
+      .map(t => ({ ...t, status: 'paid', paidAmount: t.amount || c.grandTotal / Math.max(1, (inv.installments||[]).length), paidDate: t.paidDate || today }));
+    inv.status = 'paid';
+  }
   await saveState();
   renderAll();
 }
@@ -4283,11 +4466,11 @@ function removeKdvRow(idx) {
 }
 
 function updateKdvRow(idx, field, value) {
-  invoiceKdvRows[idx][field] = parseFloat(value) || 0;
+  invoiceKdvRows[idx][field] = parseDecimal(value);
 }
 
 function recalcKdvFromRate(idx) {
-  const net = parseFloat(document.getElementById('im-amount').value) || 0;
+  const net = parseDecimal(document.getElementById('im-amount').value);
   const rate = invoiceKdvRows[idx].rate || 0;
   invoiceKdvRows[idx].amount = net * (rate / 100);
   renderKdvRows();
@@ -4296,9 +4479,9 @@ function recalcKdvFromRate(idx) {
 
 // Toplam hesaplama (modal içi canlı güncelleme)
 function recalcInvoiceTotals() {
-  const net = parseFloat(document.getElementById('im-amount').value) || 0;
-  const stopajRate = parseFloat(document.getElementById('im-stopaj').value) || 0;
-  const tevkifatRate = parseFloat(document.getElementById('im-tevkifat').value) || 0;
+  const net = parseDecimal(document.getElementById('im-amount').value);
+  const stopajRate = parseDecimal(document.getElementById('im-stopaj').value);
+  const tevkifatRate = parseDecimal(document.getElementById('im-tevkifat').value);
   
   const kdvTotal = invoiceKdvRows.reduce((s, r) => s + (r.amount || 0), 0);
   const stopajAmount = net * (stopajRate / 100);
@@ -4389,13 +4572,13 @@ function renderInstallmentRows() {
       <div>
         <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">Taksit Tutarı</div>
         <input type="number" step="0.01" value="${inst.amount ? inst.amount.toFixed(2) : '0'}" 
-          onchange="invoiceInstallments[${idx}].amount = parseFloat(this.value) || 0; updatePaymentSummary()" 
+          onchange="invoiceInstallments[${idx}].amount = parseDecimal(this.value); updatePaymentSummary()" 
           style="font-size: 12px; padding: 4px; width: 100%;">
       </div>
       <div>
         <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">Ödenen Tutar</div>
         <input type="number" step="0.01" value="${inst.paidAmount ? inst.paidAmount.toFixed(2) : '0'}" 
-          onchange="invoiceInstallments[${idx}].paidAmount = parseFloat(this.value) || 0; updatePaymentSummary()" 
+          onchange="invoiceInstallments[${idx}].paidAmount = parseDecimal(this.value); updatePaymentSummary()" 
           style="font-size: 12px; padding: 4px; width: 100%;">
       </div>
       <div>
@@ -4410,7 +4593,7 @@ function renderInstallmentRows() {
       </div>
       <div>
         <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">Durum</div>
-        <select onchange="invoiceInstallments[${idx}].status = this.value; renderInstallmentRows(); updatePaymentSummary()" style="font-size: 12px; padding: 4px;">
+        <select onchange="onInstallmentStatusChange(${idx}, this.value)" style="font-size: 12px; padding: 4px;">
           <option value="pending" ${inst.status !== 'paid' ? 'selected' : ''}>Bekliyor</option>
           <option value="paid" ${inst.status === 'paid' ? 'selected' : ''}>Ödendi</option>
         </select>
@@ -4418,6 +4601,22 @@ function renderInstallmentRows() {
     `;
     container.appendChild(div);
   });
+}
+
+function onInstallmentStatusChange(idx, newStatus) {
+  invoiceInstallments[idx].status = newStatus;
+  if (newStatus === 'paid') {
+    // Ödendi seçilince: ödenen tutar = taksit tutarı (eksik değilse)
+    if (!invoiceInstallments[idx].paidAmount || invoiceInstallments[idx].paidAmount < 0.01) {
+      invoiceInstallments[idx].paidAmount = invoiceInstallments[idx].amount || 0;
+    }
+    // Ödeme tarihi yoksa bugünü yaz
+    if (!invoiceInstallments[idx].paidDate) {
+      invoiceInstallments[idx].paidDate = new Date().toISOString().substring(0, 10);
+    }
+  }
+  renderInstallmentRows();
+  updatePaymentSummary();
 }
 
 function updatePaymentSummary() {
@@ -4433,7 +4632,7 @@ async function saveInvoice() {
   const supplier = document.getElementById('im-supplier').value.trim();
   const date = document.getElementById('im-date').value;
   const dueDate = document.getElementById('im-due').value;
-  const amount = parseFloat(document.getElementById('im-amount').value) || 0;
+  const amount = parseDecimal(document.getElementById('im-amount').value);
   
   if (!date || !supplier || !amount) { alert('Fatura tarihi, cari adı ve net tutar zorunlu'); return; }
   
@@ -4447,9 +4646,9 @@ async function saveInvoice() {
     type: document.getElementById('im-type').value,
     desc: document.getElementById('im-desc').value.trim(),
     amount,
-    fxRate: parseFloat(document.getElementById('im-fx').value) || 0,
-    stopajRate: parseFloat(document.getElementById('im-stopaj').value) || 0,
-    tevkifatRate: parseFloat(document.getElementById('im-tevkifat').value) || 0,
+    fxRate: parseDecimal(document.getElementById('im-fx').value),
+    stopajRate: parseDecimal(document.getElementById('im-stopaj').value),
+    tevkifatRate: parseDecimal(document.getElementById('im-tevkifat').value),
     kdvRows: JSON.parse(JSON.stringify(invoiceKdvRows)),
     installments: JSON.parse(JSON.stringify(invoiceInstallments)),
     // Geriye uyumluluk alanları
