@@ -1209,13 +1209,13 @@ body.view-mode .lock-status * {
     <div class="section" id="projectsSection">
       <div class="section-header">
         <h2 class="section-title">Projeler</h2>
-        <div class="section-actions">
+        <div class="section-actions" id="newProjectBtnWrap">
           <button class="btn btn-primary" onclick="createNewProject()">+ Yeni Proje</button>
         </div>
       </div>
       <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
         Aynı uygulama içinde birden fazla projeyi yönetebilirsin. Yeni proje boş bir şablonla başlar.
-        Aktif proje değiştiğinde diğer projeler etkilenmez. Projeyi silmek yönetici yetkisi gerektirir.
+        Aktif proje değiştiğinde diğer projeler etkilenmez. Projeyi silmek ve yeni proje açmak yönetici yetkisi gerektirir.
       </p>
       <div id="projectListContainer"></div>
     </div>
@@ -1234,32 +1234,23 @@ body.view-mode .lock-status * {
 
     <div class="section">
       <div class="section-header">
-        <h2 class="section-title">Veri Yönetimi & Paylaşım</h2>
-      </div>
-      <div style="background: var(--surface-2); border: 1px dashed var(--accent); border-radius: 8px; padding: 14px; margin-bottom: 14px;">
-        <div style="font-weight: 600; font-size: 13px; margin-bottom: 6px;">📦 Başkasıyla Paylaşma</div>
-        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
-          Verileri başka biriyle paylaşmak için <strong>"Paylaşılabilir HTML İndir"</strong> butonunu kullan.
-          Bu, tüm verileri (bütün projeler dahil — bütçe, faturalar, ayarlar, kategoriler) dosyanın içine gömer.
-          Karşı taraf indirdiği HTML'i tarayıcıda açtığında verilerini doğrudan görür — ayrıca düzenleme şifresi varsa kendisi de düzenleme yapabilir.
-        </p>
-        <button class="btn btn-primary" onclick="exportShareableHtml()">📦 Paylaşılabilir HTML İndir</button>
+        <h2 class="section-title">Veri Yönetimi</h2>
       </div>
       
       <div style="display: flex; gap: 10px; flex-wrap: wrap;">
         <button class="btn btn-ghost" onclick="exportXlsx()">📊 Excel (.xlsx) Olarak İndir</button>
         <button class="btn btn-ghost" onclick="document.getElementById('xlsxImportInput2').click()">📤 Excel İçe Aktar</button>
         <input type="file" id="xlsxImportInput2" style="display:none" accept=".xlsx,.xls" onchange="importXlsx(event)">
-        <button class="btn btn-ghost" onclick="exportAllData()">JSON Yedek İndir</button>
-        <button class="btn btn-ghost" onclick="document.getElementById('importInput').click()">JSON İçe Aktar</button>
+        <button class="btn btn-ghost" onclick="exportAllData()">💾 JSON Yedek İndir</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('importInput').click()">📂 JSON İçe Aktar</button>
         <input type="file" id="importInput" style="display:none" accept=".json" onchange="importData(event)">
         <button class="btn btn-ghost" onclick="loadDemoData(true)" style="color: var(--highlight);">Demo Veriye Sıfırla</button>
         <button class="btn btn-danger" onclick="clearAllData()">Tüm Veriyi Sil</button>
       </div>
       <p style="margin-top: 12px; font-size: 12px; color: var(--text-muted);">
-        Veriler tarayıcında otomatik kalıcı olarak saklanır <strong>(yalnızca bu tarayıcıda)</strong>. 
-        Başka bir cihaza/kişiye aktarmak için yukarıdaki <strong>Paylaşılabilir HTML</strong> ya da <strong>JSON Yedek</strong> kullan.
-        <strong>Excel'i indir → düzenle → İçe Aktar</strong> akışı toplu güncelleme için (ID kolonu silinmemelidir).
+        Veriler Firebase'de saklanır — tüm yetkili kullanıcılar aynı veriyi görür.
+        Düzenli <strong>JSON Yedek</strong> almanı öneririz (Firebase erişilemez olursa tek yedek budur).
+        <strong>Excel'i indir → düzenle → İçe Aktar</strong> akışı toplu güncelleme için kullanılabilir (ID kolonu silinmemelidir).
       </p>
     </div>
   </section>
@@ -1678,10 +1669,10 @@ function requireAdmin() {
   return false;
 }
 
-// Dışa aktarma (Excel, JSON, Paylaşılabilir HTML) — düzenleme yetkisi gerek
+// Dışa aktarma (Excel, JSON) — düzenleme yetkisi gerek
 function requireExport() {
   if (editMode || adminMode) return true;
-  alert('🔒 İndirme yetkisi gerekli\n\nDışa aktarma işlemleri (Excel, JSON, Paylaşılabilir HTML) için düzenleme yetkisine sahip olmalısın.\n\nYazdırma serbesttir — Yazdır butonunu kullanabilirsin.');
+  alert('🔒 İndirme yetkisi gerekli\n\nDışa aktarma işlemleri (Excel, JSON) için düzenleme yetkisine sahip olmalısın.\n\nYazdırma serbesttir — Yazdır butonunu kullanabilirsin.');
   return false;
 }
 
@@ -2040,37 +2031,6 @@ const persistentStorage = {
   }
 };
 
-const EMBEDDED_DATA_ID = '__bna_embedded_data__';
-
-function getEmbeddedData() {
-  const el = document.getElementById(EMBEDDED_DATA_ID);
-  if (!el || !el.textContent || !el.textContent.trim()) return null;
-  let text = el.textContent.trim();
-  // Yeni format: base64 ile başlar (data-encoding="base64" attribute'una sahip)
-  // Eski format: ham JSON
-  try {
-    const encoding = el.getAttribute('data-encoding');
-    if (encoding === 'base64') {
-      // base64 → UTF-8 string
-      try {
-        // atob → binary string, sonra UTF-8 decode
-        const binary = atob(text);
-        // UTF-8 decode: her byte'ı escape, sonra decode
-        text = decodeURIComponent(Array.from(binary).map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
-      } catch (e) {
-        console.warn('base64 decode hatası:', e);
-        return null;
-      }
-    }
-    const parsed = JSON.parse(text);
-    if (parsed && typeof parsed === 'object') return parsed;
-    return null;
-  } catch (e) {
-    console.warn('Gömülü veri parse edilemedi:', e);
-    return null;
-  }
-}
-
 // Proje state'i için migration (alanları doldur, eski formatları çevir)
 function applyProjectMigrations(p) {
   p.budget = p.budget || [];
@@ -2165,10 +2125,7 @@ function normalizeApp(a) {
 }
 
 async function loadApp() {
-  // 1) Gömülü veri (paylaşılabilir HTML)
-  const embedded = getEmbeddedData();
-  
-  // 2) Yerel kayıt — önce yeni APP_KEY, sonra eski STORAGE_KEY
+  // Firebase veya localStorage'dan yükle
   let localData = null;
   try {
     const result = await persistentStorage.get(APP_KEY);
@@ -2182,51 +2139,10 @@ async function loadApp() {
       if (oldRes && oldRes.value) {
         const oldState = JSON.parse(oldRes.value);
         localData = upgradeOldFormatToApp(oldState);
-        // Yeni formata kaydet, eskiyi sil
         await persistentStorage.set(APP_KEY, JSON.stringify(localData));
         try { await persistentStorage.delete('kita_bulvar_v0'); } catch(e) {}
       }
     } catch (e) { /* yok */ }
-  }
-  
-  // Gömülü veri var mı, ve hangisi daha yeni?
-  let embeddedApp = null;
-  if (embedded) {
-    // Gömülü veri yeni format mı eski mi?
-    if (embedded.meta && embedded.projects) {
-      embeddedApp = normalizeApp(embedded);
-    } else {
-      embeddedApp = normalizeApp(upgradeOldFormatToApp(embedded));
-    }
-  }
-  
-  if (localData && embeddedApp) {
-    const localTs = Math.max(...localData.meta.projectList.map(p => p.lastModified || 0), 0);
-    const embTs = Math.max(...embeddedApp.meta.projectList.map(p => p.lastModified || 0), 0);
-    if (embTs > localTs + 1000) {
-      const localDate = localTs ? new Date(localTs).toLocaleString('tr-TR') : 'tarihsiz';
-      const embDate = new Date(embTs).toLocaleString('tr-TR');
-      const useEmbedded = confirm(
-        '📦 Bu dosya paylaşılan veri içeriyor.\n\n' +
-        'Gömülü veri: ' + embDate + '\n' +
-        'Yereldeki veri: ' + localDate + '\n\n' +
-        'Gömülü veri daha yeni. Onu yüklemek ister misin?\n\n' +
-        '[Tamam] Gömülü veriyi yükle (yereldeki yedeklenir)\n' +
-        '[İptal] Yereldeki veriyi koru'
-      );
-      if (useEmbedded) {
-        try {
-          await persistentStorage.set(APP_KEY + '_backup_' + Date.now(), JSON.stringify(localData));
-        } catch (e) { /* yedek olamadıysa devam */ }
-        app = embeddedApp;
-        await saveApp();
-        loadActiveProject();
-        return;
-      }
-    }
-    app = normalizeApp(localData);
-    loadActiveProject();
-    return;
   }
   
   if (localData) {
@@ -2235,14 +2151,7 @@ async function loadApp() {
     return;
   }
   
-  if (embeddedApp) {
-    app = embeddedApp;
-    await saveApp();
-    loadActiveProject();
-    return;
-  }
-  
-  // Hiçbiri yok — ilk açılış, boş bir proje oluştur (demo değil)
+  // İlk açılış — boş proje oluştur
   app = normalizeApp(JSON.parse(JSON.stringify(DEFAULT_APP)));
   const firstId = 'p_' + Date.now();
   const firstProject = JSON.parse(JSON.stringify(DEFAULT_PROJECT));
@@ -2312,7 +2221,7 @@ async function loadState() {
 // ============================================================
 
 async function createNewProject() {
-  if (!requireEdit()) return;
+  if (!requireAdmin()) return;
   const name = prompt('Yeni projenin adı:', 'Yeni Proje');
   if (name === null) return;
   const trimmedName = name.trim() || 'Yeni Proje';
@@ -2378,7 +2287,7 @@ async function deleteProject(id) {
 }
 
 async function duplicateProject(id) {
-  if (!requireEdit()) return;
+  if (!requireAdmin()) return;
   const src = app.projects[id];
   if (!src) return;
   const srcEntry = app.meta.projectList.find(p => p.id === id);
@@ -2405,6 +2314,11 @@ function renderProjectList() {
     const active = app.meta.projectList.find(p => p.id === app.meta.activeProjectId);
     headerEl.textContent = active ? active.name : '—';
   }
+
+  // "+ Yeni Proje" butonu — sadece admin
+  const newProjBtn = document.getElementById('newProjectBtnWrap');
+  if (newProjBtn) newProjBtn.style.display = adminMode ? '' : 'none';
+
   if (!wrap) return;
   const list = app.meta.projectList.slice().sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
   let html = '';
@@ -2420,13 +2334,22 @@ function renderProjectList() {
       html += '<td>' + lm + '</td>';
       html += '<td class="center">' + (isActive ? '<span class="badge badge-success">Aktif</span>' : '<span style="color: var(--text-muted); font-size: 11px;">Pasif</span>') + '</td>';
       html += '<td class="center">';
-      if (!isActive) html += '<button class="btn btn-ghost view-allowed" onclick="switchProject(\'' + p.id + '\')">Aktif Et</button> ';
-      html += '<button class="btn btn-ghost" onclick="duplicateProject(\'' + p.id + '\')">Kopyala</button> ';
-      html += '<button class="btn btn-danger" onclick="deleteProject(\'' + p.id + '\')">Sil</button>';
+      // Proje geçişi: editMode veya adminMode yeterli
+      if (!isActive) html += '<button class="btn btn-ghost" onclick="switchProject(\'' + p.id + '\')">Geç</button> ';
+      // Kopyala + Sil: sadece admin
+      if (adminMode) {
+        html += '<button class="btn btn-ghost" onclick="duplicateProject(\'' + p.id + '\')">Kopyala</button> ';
+        html += '<button class="btn btn-danger" onclick="deleteProject(\'' + p.id + '\')">Sil</button>';
+      }
       html += '</td>';
       html += '</tr>';
     });
     html += '</tbody></table>';
+    if (!adminMode && (editMode)) {
+      html += '<div style="font-size: 11px; color: var(--text-muted); margin-top: 8px; padding: 6px 10px; background: var(--surface-2); border-radius: 6px;">';
+      html += '🔓 Düzenleme yetkisi ile projeler arasında geçiş yapabilir ve veri ekleyebilirsin. Yeni proje açmak, kopyalamak ve silmek için yönetici girişi gerekir.';
+      html += '</div>';
+    }
   }
   wrap.innerHTML = html;
 }
@@ -4744,124 +4667,6 @@ function exportAllData() {
   URL.revokeObjectURL(url);
 }
 
-// Paylaşılabilir HTML — TÜM app'i (tüm projeler) dosyanın içine gömüp yeni HTML üretir
-async function exportShareableHtml() {
-  if (!requireEdit()) return;
-  // Önce mevcut state'i kaydet (lastModified güncel olsun)
-  await saveState();
-  
-  // Önemli: outerHTML çağrısı, gömülü veriyi (önceden var olan) ve DOM state'ini de içerir.
-  // Karşı taraf temiz başlasın diye: önce DOM state'ini temizle, sonra outerHTML al, sonra geri yükle.
-  
-  // 1) DOM state'ini geçici olarak temizle
-  const savedBodyClass = document.body.className;
-  document.body.className = '';
-  
-  const savedModalStates = [];
-  document.querySelectorAll('.modal-overlay.active').forEach(m => {
-    savedModalStates.push(m);
-    m.classList.remove('active');
-  });
-  
-  const savedActiveTab = activeTab;
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  const ozetBtn = document.querySelector('.tab-btn[data-tab="ozet"]');
-  const ozetContent = document.querySelector('.tab-content[data-tab-content="ozet"]');
-  if (ozetBtn) ozetBtn.classList.add('active');
-  if (ozetContent) ozetContent.classList.add('active');
-  
-  // 2) Var olan tüm gömülü veri script tag'lerini DOM'dan FİZİKSEL olarak kaldır
-  // (regex yetmiyor — bazen önceki bozuk sürümlerden kalıntı olabiliyor)
-  document.querySelectorAll('script[id="' + EMBEDDED_DATA_ID + '"]').forEach(el => el.remove());
-  
-  // 3) Şimdi outerHTML al
-  let html = document.documentElement.outerHTML;
-  
-  // 4) DOM state'ini geri yükle
-  document.body.className = savedBodyClass;
-  savedModalStates.forEach(m => m.classList.add('active'));
-  // Tab durumunu geri al
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  const restoreBtn = document.querySelector('.tab-btn[data-tab="' + savedActiveTab + '"]');
-  const restoreContent = document.querySelector('.tab-content[data-tab-content="' + savedActiveTab + '"]');
-  if (restoreBtn) restoreBtn.classList.add('active');
-  if (restoreContent) restoreContent.classList.add('active');
-  
-  // 5) Güvenlik kontrolü: outerHTML içinde, sayfanın gerçek bitiş kapanışı (5133. satırdaki gibi)
-  // dışında başka bir kapanış kaldı mı? (Bozuk eski veriden kalma olabilir)
-  // closeTag'i parçalı yazıyoruz — kendi kaynak kodumuzda literal olmasın
-  const closeTag = '<' + '/script' + '>';
-  const openTag = '<' + 'script';
-  
-  // Çift güvenlik — regex ile de eski gömülü blok kalmışsa temizle
-  const embedRegex = new RegExp(openTag + '[^>]*id="' + EMBEDDED_DATA_ID + '"[\\s\\S]*?' + closeTag, 'gi');
-  html = html.replace(embedRegex, '');
-  
-  // 6) Tüm app'i base64 olarak göm
-  const exportApp = JSON.parse(JSON.stringify(app));
-  const dataJson = JSON.stringify(exportApp);
-  const sizeKB = Math.round(dataJson.length / 1024);
-  
-  // UTF-8 destekli base64 encode (Türkçe karakterler için)
-  // base64 alfabesi yalnız A-Z, a-z, 0-9, +, /, = içerir.
-  const utf8Bytes = unescape(encodeURIComponent(dataJson));
-  const base64Data = btoa(utf8Bytes);
-  
-  const embeddedTag = openTag + ' id="' + EMBEDDED_DATA_ID + '" type="application/octet-stream" data-encoding="base64">\n' + base64Data + '\n' + closeTag;
-  
-  // Gerçek body kapanışından önce ekle (lastIndexOf ile — kod string'lerindeki literal'leri atla)
-  const bodyClose = '<' + '/body>';
-  const lastBodyIdx = html.lastIndexOf(bodyClose);
-  if (lastBodyIdx !== -1) {
-    html = html.substring(0, lastBodyIdx) + embeddedTag + '\n' + html.substring(lastBodyIdx);
-  } else {
-    html = html + '\n' + embeddedTag;
-  }
-  
-  if (!html.startsWith('<!DOCTYPE') && !html.startsWith('<!doctype')) {
-    html = '<!DOCTYPE html>\n' + html;
-  }
-  
-  // İndir
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const today = new Date().toISOString().substring(0, 10);
-  const projName = (state.settings.projectName || 'proje').replace(/\s+/g, '_');
-  a.href = url;
-  a.download = `${projName}_${today}_paylasilabilir.html`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  
-  // Bilgi mesajı
-  let attachCount = 0;
-  Object.values(app.projects).forEach(p => {
-    attachCount += (p.invoices || []).filter(i => i.hasAttachment).length;
-  });
-  const projCount = app.meta.projectList.length;
-  let msg = `✓ Paylaşılabilir HTML hazır (~${sizeKB} KB).\n\n${projCount} proje gömüldü. Karşı taraf bu dosyayı tarayıcısında açtığında verileri görür.\n`;
-  if (attachCount > 0) {
-    msg += `\n⚠ Not: ${attachCount} fatura görseli gömülmedi (boyut nedeniyle). Görseller yalnız sende kalır.`;
-  }
-  if (app.meta.adminPasswordHash || app.meta.editPasswordHash) {
-    msg += `\n\n🔐 Şifre koruması paylaşılan dosyada da geçerli:`;
-    if (app.meta.editPasswordHash) {
-      msg += `\n• Karşı taraf veri girmek için düzenleme şifresini bilmeli`;
-    }
-    if (app.meta.adminPasswordHash) {
-      msg += `\n• Yönetici şifresi karşı tarafa kopyalanır ama hash olarak — şifreyi öğrenemez, sadece kullanırsa değiştirebilir`;
-    }
-    msg += `\n• Şifresiz açan kişi yalnızca görüntüleyip yazdırabilir`;
-  } else {
-    msg += `\n\n⚠ Şifre koruması YOK — paylaştığın kişi her şeyi değiştirebilir. Önce Güvenlik > Yönetici Şifresi koymanı öneririm.`;
-  }
-  alert(msg);
-}
-
 async function importData(event) {
   if (!requireEdit()) return;
   const file = event.target.files[0];
@@ -5766,274 +5571,387 @@ async function deleteDeduction(id) {
 // ============================================================
 function exportXlsx() {
   if (!requireEdit()) return;
-  if (typeof XLSX === 'undefined') {
-    alert('Excel kütüphanesi yüklenemedi. İnternet bağlantını kontrol et.');
-    return;
-  }
+  if (typeof XLSX === 'undefined') { alert('Excel kütüphanesi yüklenemedi.'); return; }
+
   const wb = XLSX.utils.book_new();
   const fx = getCurrentFx();
   const overall = computeOverallProgress();
   const cats = computeCategoryBreakdown();
-  
-  // Yardımcı: header stili (bold yapılamıyor SheetJS free'de ama kolon genişlikleri, freeze, numFmt ayarlanabilir)
-  function applyNumberFormat(ws, col, startRow, endRow, fmt) {
-    for (let r = startRow; r <= endRow; r++) {
-      const addr = col + r;
-      if (ws[addr]) ws[addr].z = fmt;
-    }
+  const cf = computeCashflow();
+
+  // Sayı formatları
+  const FMT_TL  = '#,##0.00 "₺"';
+  const FMT_USD = '"$"#,##0.00';
+  const FMT_NUM = '#,##0.00';
+  const FMT_PCT = '0.00"%"';
+  const FMT_DATE = 'DD.MM.YYYY';
+  const FMT_INT = '#,##0';
+
+  // Yardımcı: belirli kolon + satır aralığına sayı formatı uygula
+  function applyFmt(ws, cols, rowStart, rowEnd, fmt) {
+    cols.forEach(col => {
+      for (let r = rowStart; r <= rowEnd; r++) {
+        const addr = col + r;
+        if (ws[addr] && ws[addr].t === 'n') ws[addr].z = fmt;
+      }
+    });
   }
-  
-  // ====== 1) BÜTÇE ======
-  const budgetHeader = ['Kod', 'Seviye', 'Kalem', 'Tedarikçi', 'Tip', 'Miktar', 'Birim', 'B.Fiyat USD', 'Toplam USD', 'Toplam TL', 'ID'];
+  // Yardımcı: tek hücreye format uygula
+  function cellFmt(ws, addr, fmt) {
+    if (ws[addr]) ws[addr].z = fmt;
+  }
+
+  // ============================================================
+  // SAYFA 1 — BÜTÇE (Gerçekleşme + Kalan dahil)
+  // ============================================================
+  // Sütunlar: A=Kod B=Seviye C=Kalem D=Tedarikçi E=Tip F=Miktar G=Birim H=B.Fiyat I=Para
+  //           J=Baz USD K=Baz TL  L=Revize USD  M=Gerçekleşme USD  N=Gerçekleşme TL
+  //           O=Kalan USD  P=Kalan TL  Q=Durum  R=ID
+  const budgetHeader = [
+    'Kod','Seviye','Kalem','Tedarikçi','Tip','Miktar','Birim','B.Fiyat','Para',
+    'Baz Bütçe USD','Baz Bütçe TL','Revize USD',
+    'Gerçekleşme USD','Gerçekleşme TL',
+    'Kalan USD','Kalan TL',
+    'Durum','ID'
+  ];
   const sortedBudget = [...state.budget].sort((a, b) => a.code.localeCompare(b.code));
-  const budgetData = [budgetHeader];
+  const budgetRows = [budgetHeader];
   sortedBudget.forEach(b => {
-    budgetData.push([
+    const baseUsd = getBudgetItemTotalUsd(b);
+    const baseTry = getBudgetItemTotalTry(b);
+    const actUsd  = getBudgetItemActualUsd(b);
+    const actTry  = getBudgetItemActualTry(b);
+    const revUsd  = b.revisedBudgetUsd != null ? b.revisedBudgetUsd : null;
+    const effUsd  = revUsd != null ? revUsd : baseUsd;
+    const remUsd  = effUsd - actUsd;
+    const remTry  = (revUsd != null ? revUsd * fx : baseTry) - actTry;
+    let durum = actUsd > effUsd + 0.01 ? 'AŞIM' : (revUsd != null ? 'Revize' : (actUsd > 0 ? 'Normal' : ''));
+    budgetRows.push([
       b.code, b.level, b.name, b.supplier || '',
       getCategoryLabel(b.materialType),
-      b.qty || 0, b.unit || '', b.unitPrice || 0,
-      null, null, b.id
+      isBudgetLeaf(b) ? (b.qty || 0) : '', b.unit || '',
+      isBudgetLeaf(b) ? (b.unitPrice || 0) : '', b.currency || 'USD',
+      baseUsd, baseTry, revUsd != null ? revUsd : '',
+      actUsd || '', actTry || '',
+      remUsd, remTry,
+      durum, b.id
     ]);
   });
-  const budgetWs = XLSX.utils.aoa_to_sheet(budgetData);
-  for (let i = 2; i <= budgetData.length; i++) {
-    budgetWs[`I${i}`] = { t: 'n', f: `F${i}*H${i}` };
-    budgetWs[`J${i}`] = { t: 'n', f: `I${i}*${fx}` };
+  // Toplam satırı
+  const bN = budgetRows.length; // son veri satırı indexi (1-based = bN)
+  const bTot = bN + 1;
+  budgetRows.push(['TOPLAM','','','','','','','','',null,null,'',null,null,null,null,'','']);
+  const budgetWs = XLSX.utils.aoa_to_sheet(budgetRows);
+  // Formüller — veri satırları 2..bN
+  for (let i = 2; i <= bN; i++) {
+    // Baz TL = Baz USD * fx (eğer değer girilmemişse)
+    if (!sortedBudget[i-2] || budgetWs[`J${i}`]) {
+      budgetWs[`K${i}`] = { t: 'n', f: `J${i}*${fx}` };
+    }
+    // Kalan USD = Revize (L) varsa L-M, yoksa J-M
+    budgetWs[`O${i}`] = { t: 'n', f: `IF(L${i}<>"",L${i},J${i})-IF(M${i}="",0,M${i})` };
+    budgetWs[`P${i}`] = { t: 'n', f: `IF(L${i}<>"",L${i}*${fx},K${i})-IF(N${i}="",0,N${i})` };
   }
-  const bTotalRow = budgetData.length + 1;
-  budgetWs[`A${bTotalRow}`] = { t: 's', v: 'TOPLAM' };
-  budgetWs[`I${bTotalRow}`] = { t: 'n', f: `SUM(I2:I${budgetData.length})` };
-  budgetWs[`J${bTotalRow}`] = { t: 'n', f: `SUM(J2:J${budgetData.length})` };
-  budgetWs['!ref'] = `A1:K${bTotalRow}`;
-  budgetWs['!cols'] = [{ wch: 14 }, { wch: 7 }, { wch: 32 }, { wch: 20 }, { wch: 14 }, { wch: 10 }, { wch: 8 }, { wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 16 }];
-  budgetWs['!autofilter'] = { ref: `A1:K1` };
+  // Toplam satırı formülleri
+  ['J','K','L','M','N','O','P'].forEach(col => {
+    budgetWs[`${col}${bTot}`] = { t: 'n', f: `SUM(${col}2:${col}${bN})` };
+  });
+  budgetWs['!ref'] = `A1:R${bTot}`;
+  budgetWs['!cols'] = [
+    {wch:14},{wch:6},{wch:32},{wch:20},{wch:12},{wch:8},{wch:7},{wch:12},{wch:5},
+    {wch:16},{wch:18},{wch:14},{wch:18},{wch:18},{wch:14},{wch:18},{wch:8},{wch:16}
+  ];
+  budgetWs['!freeze'] = { xSplit: 0, ySplit: 1 }; // ilk satır dondur
+  budgetWs['!autofilter'] = { ref: 'A1:R1' };
+  applyFmt(budgetWs, ['J','L','M','O'], 2, bTot, FMT_USD);
+  applyFmt(budgetWs, ['K','N','P'], 2, bTot, FMT_TL);
+  applyFmt(budgetWs, ['F','H'], 2, bN, FMT_NUM);
   XLSX.utils.book_append_sheet(wb, budgetWs, 'Bütçe');
-  
-  // ====== 2) FATURALAR (yeni yapı) ======
-  const invHeader = ['Fatura No', 'Cari Adı', 'F.Tarihi', 'Vade', 'Hesap Kodu', 'Tip', 'Açıklama',
-    'Net Tutar TL', 'KDV 1 %', 'KDV 1 TL', 'KDV 2 %', 'KDV 2 TL', 'KDV 3 %', 'KDV 3 TL', 'KDV 4 %', 'KDV 4 TL',
-    'KDV Toplam', 'Stopaj %', 'Stopaj TL', 'Tevkifat %', 'Tevkifat TL', 'Genel Toplam',
-    'Taksit', 'Ödenen', 'Kalan', 'USD Kuru', 'Durum', 'ID'];
-  const invData = [invHeader];
-  const sortedInv = [...state.invoices].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  // ============================================================
+  // SAYFA 2 — FATURALAR
+  // ============================================================
+  // A=FatNo B=Cari C=F.Tar D=Vade E=Kod F=Tip G=Açıklama
+  // H=Net TL  I=KDV1% J=KDV1TL K=KDV2% L=KDV2TL M=KDV3% N=KDV3TL O=KDV4% P=KDV4TL
+  // Q=KDVTop R=Stop% S=StopTL T=Tevk% U=TevkTL V=GenTop
+  // W=Taksit X=Ödenen Y=Kalan Z=FxKuru AA=Durum AB=ID
+  const invHeader = [
+    'Fatura No','Cari Adı','F.Tarihi','Vade','Hesap Kodu','Tip','Açıklama',
+    'Net TL','KDV1 %','KDV1 TL','KDV2 %','KDV2 TL','KDV3 %','KDV3 TL','KDV4 %','KDV4 TL',
+    'KDV Toplam','Stopaj %','Stopaj TL','Tevkifat %','Tevkifat TL','Genel Toplam',
+    'Taksit Sayısı','Ödenen','Kalan','USD Kuru','Durum','ID'
+  ];
+  const sortedInv = [...state.invoices].sort((a,b) => new Date(b.date) - new Date(a.date));
+  const invRows = [invHeader];
   sortedInv.forEach(inv => {
     const c = calcInvoiceTotals(inv);
     const kdv = c.kdvRows || [];
-    const row = [
+    invRows.push([
       inv.invoiceNo || '', inv.supplier || '', inv.date || '', inv.dueDate || '',
       inv.code || '', getCategoryLabel(inv.type), inv.desc || '',
       c.net,
-      kdv[0] ? kdv[0].rate : '', kdv[0] ? kdv[0].amount : '',
-      kdv[1] ? kdv[1].rate : '', kdv[1] ? kdv[1].amount : '',
-      kdv[2] ? kdv[2].rate : '', kdv[2] ? kdv[2].amount : '',
-      kdv[3] ? kdv[3].rate : '', kdv[3] ? kdv[3].amount : '',
-      null, // KDV Toplam formül
-      c.stopajRate, null, // Stopaj TL formül
-      c.tevkifatRate, null, // Tevkifat TL formül
-      null, // Genel Toplam formül
-      c.installments.length, c.totalPaid, c.remaining,
+      kdv[0]?.rate ?? '', kdv[0]?.amount ?? '',
+      kdv[1]?.rate ?? '', kdv[1]?.amount ?? '',
+      kdv[2]?.rate ?? '', kdv[2]?.amount ?? '',
+      kdv[3]?.rate ?? '', kdv[3]?.amount ?? '',
+      null, c.stopajRate, null, c.tevkifatRate, null, null,
+      c.installments.length, c.totalPaid, null,
       inv.fxRate || '',
       c.overallStatus === 'paid' ? 'Ödendi' : (c.overallStatus === 'partial' ? 'Kısmi' : 'Bekliyor'),
       inv.id
-    ];
-    invData.push(row);
+    ]);
   });
-  const invWs = XLSX.utils.aoa_to_sheet(invData);
-  // Formüller: Q = KDV Toplam = J+L+N+P, S = Stopaj TL = H*(R/100), U = Tevkifat TL = Q*(T/100), V = G.Toplam = H+Q-S-U
-  for (let i = 2; i <= invData.length; i++) {
-    invWs[`Q${i}`] = { t: 'n', f: `J${i}+L${i}+N${i}+P${i}` };
-    invWs[`S${i}`] = { t: 'n', f: `H${i}*(R${i}/100)` };
-    invWs[`U${i}`] = { t: 'n', f: `Q${i}*(T${i}/100)` };
-    invWs[`V${i}`] = { t: 'n', f: `H${i}+Q${i}-S${i}-U${i}` };
+  const iN = invRows.length;
+  const iTot = iN + 1;
+  invRows.push(['TOPLAM','','','','','','',null,'',null,'',null,'',null,'',null,null,'',null,'',null,null,'',null,null,'','','']);
+  const invWs = XLSX.utils.aoa_to_sheet(invRows);
+  for (let i = 2; i <= iN; i++) {
+    invWs[`Q${i}`] = { t:'n', f:`J${i}+L${i}+N${i}+P${i}` };
+    invWs[`S${i}`] = { t:'n', f:`H${i}*(R${i}/100)` };
+    invWs[`U${i}`] = { t:'n', f:`Q${i}*(T${i}/100)` };
+    invWs[`V${i}`] = { t:'n', f:`H${i}+Q${i}-S${i}-U${i}` };
+    invWs[`Y${i}`] = { t:'n', f:`X${i}-W${i}` }; // Kalan = Ödenen - Taksit? Hayır: Kalan = GenTop - Ödenen
+    invWs[`Y${i}`] = { t:'n', f:`V${i}-X${i}` };
   }
-  // Toplam satırı
-  const iTotalRow = invData.length + 1;
-  invWs[`A${iTotalRow}`] = { t: 's', v: 'TOPLAM' };
-  ['H', 'J', 'L', 'N', 'P', 'Q', 'S', 'U', 'V', 'X', 'Y'].forEach(col => {
-    invWs[`${col}${iTotalRow}`] = { t: 'n', f: `SUM(${col}2:${col}${invData.length})` };
+  ['H','J','L','N','P','Q','S','U','V','X','Y'].forEach(col => {
+    invWs[`${col}${iTot}`] = { t:'n', f:`SUM(${col}2:${col}${iN})` };
   });
-  invWs['!ref'] = `A1:AB${iTotalRow}`;
+  invWs['!ref'] = `A1:AB${iTot}`;
   invWs['!cols'] = [
-    { wch: 14 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 28 },
-    { wch: 14 }, { wch: 7 }, { wch: 12 }, { wch: 7 }, { wch: 12 }, { wch: 7 }, { wch: 12 }, { wch: 7 }, { wch: 12 },
-    { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 16 },
-    { wch: 7 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 16 }
+    {wch:14},{wch:22},{wch:11},{wch:11},{wch:14},{wch:12},{wch:26},
+    {wch:14},{wch:7},{wch:12},{wch:7},{wch:12},{wch:7},{wch:12},{wch:7},{wch:12},
+    {wch:13},{wch:8},{wch:12},{wch:8},{wch:12},{wch:15},
+    {wch:8},{wch:13},{wch:13},{wch:10},{wch:9},{wch:16}
   ];
-  invWs['!autofilter'] = { ref: `A1:AB1` };
+  invWs['!freeze'] = { xSplit: 0, ySplit: 1 };
+  invWs['!autofilter'] = { ref: 'A1:AB1' };
+  applyFmt(invWs, ['H','J','L','N','P','Q','S','U','V','X','Y'], 2, iTot, FMT_TL);
+  applyFmt(invWs, ['C','D'], 2, iN, FMT_DATE);
   XLSX.utils.book_append_sheet(wb, invWs, 'Faturalar');
-  
-  // ====== 3) ÖDEME PLANI (taksit detayları) ======
-  const payHeader = ['Fatura No', 'Cari Adı', 'Taksit #', 'Vade Tarihi', 'Taksit Tutarı', 'Ödenen', 'Kalan', 'Ödeme Tarihi', 'Durum'];
-  const payData = [payHeader];
+
+  // ============================================================
+  // SAYFA 3 — ÖDEME PLANI
+  // ============================================================
+  const payHeader = ['Fatura No','Cari Adı','Taksit #','Vade','Taksit Tutarı','Ödenen','Kalan','Ödeme Tarihi','Durum'];
+  const payRows = [payHeader];
   sortedInv.forEach(inv => {
     const c = calcInvoiceTotals(inv);
     c.installments.forEach((inst, idx) => {
-      const remaining = (inst.amount || 0) - (inst.paidAmount || 0);
-      payData.push([
+      payRows.push([
         inv.invoiceNo || inv.id, inv.supplier || '',
-        idx + 1, inst.dueDate || '', inst.amount || 0,
-        inst.paidAmount || 0, null, // Kalan formül
-        inst.paidDate || '',
-        inst.status === 'paid' ? 'Ödendi' : 'Bekliyor'
+        idx + 1, inst.dueDate || '',
+        inst.amount || 0, inst.paidAmount || 0, null,
+        inst.paidDate || '', inst.status === 'paid' ? 'Ödendi' : 'Bekliyor'
       ]);
     });
   });
-  const payWs = XLSX.utils.aoa_to_sheet(payData);
-  for (let i = 2; i <= payData.length; i++) {
-    payWs[`G${i}`] = { t: 'n', f: `E${i}-F${i}` };
-  }
-  const pTotalRow = payData.length + 1;
-  payWs[`A${pTotalRow}`] = { t: 's', v: 'TOPLAM' };
-  payWs[`E${pTotalRow}`] = { t: 'n', f: `SUM(E2:E${payData.length})` };
-  payWs[`F${pTotalRow}`] = { t: 'n', f: `SUM(F2:F${payData.length})` };
-  payWs[`G${pTotalRow}`] = { t: 'n', f: `SUM(G2:G${payData.length})` };
-  payWs['!ref'] = `A1:I${pTotalRow}`;
-  payWs['!cols'] = [{ wch: 16 }, { wch: 22 }, { wch: 8 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 10 }];
-  payWs['!autofilter'] = { ref: `A1:I1` };
+  const pN = payRows.length;
+  payRows.push(['TOPLAM','','','',null,null,null,'','']);
+  const payWs = XLSX.utils.aoa_to_sheet(payRows);
+  for (let i = 2; i <= pN; i++) payWs[`G${i}`] = { t:'n', f:`E${i}-F${i}` };
+  ['E','F','G'].forEach(col => { payWs[`${col}${pN+1}`] = { t:'n', f:`SUM(${col}2:${col}${pN})` }; });
+  payWs['!ref'] = `A1:I${pN+1}`;
+  payWs['!cols'] = [{wch:16},{wch:22},{wch:8},{wch:12},{wch:16},{wch:16},{wch:16},{wch:12},{wch:10}];
+  payWs['!freeze'] = { xSplit: 0, ySplit: 1 };
+  payWs['!autofilter'] = { ref: 'A1:I1' };
+  applyFmt(payWs, ['E','F','G'], 2, pN+1, FMT_TL);
+  applyFmt(payWs, ['D','H'], 2, pN, FMT_DATE);
   XLSX.utils.book_append_sheet(wb, payWs, 'Ödeme Planı');
-  
-  // ====== 4) KESİNTİLER ======
+
+  // ============================================================
+  // SAYFA 4 — KESİNTİLER
+  // ============================================================
   const dCols = state.settings.deductionColumns;
-  const dHeader = ['Tedarikçi', 'Kod', 'Açıklama', ...dCols.map(c => c.label), 'Toplam'];
-  const dData = [dHeader];
+  const dHeader = ['Tedarikçi','Kod','Açıklama',...dCols.map(c=>c.label),'Toplam'];
+  const dRows = [dHeader];
   state.deductions.forEach(d => {
-    const colVals = dCols.map(c => (d.columns && d.columns[c.key]) || 0);
-    dData.push([d.supplier, d.code || '', d.desc || '', ...colVals, null]);
+    dRows.push([d.supplier, d.code||'', d.desc||'', ...dCols.map(c=>(d.columns&&d.columns[c.key])||0), null]);
   });
-  const dWs = XLSX.utils.aoa_to_sheet(dData);
-  const dTotalColLetter = XLSX.utils.encode_col(3 + dCols.length);
-  const dColStartLetter = 'D';
-  const dColEndLetter = XLSX.utils.encode_col(2 + dCols.length);
-  for (let i = 2; i <= dData.length; i++) {
-    dWs[`${dTotalColLetter}${i}`] = { t: 'n', f: `SUM(${dColStartLetter}${i}:${dColEndLetter}${i})` };
+  const dN = dRows.length;
+  dRows.push(['TOPLAM','','',...dCols.map(()=>null),null]);
+  const dWs = XLSX.utils.aoa_to_sheet(dRows);
+  const dTotCol = XLSX.utils.encode_col(3 + dCols.length);
+  const dStartCol = 'D', dEndCol = XLSX.utils.encode_col(2 + dCols.length);
+  for (let i = 2; i <= dN; i++) dWs[`${dTotCol}${i}`] = { t:'n', f:`SUM(${dStartCol}${i}:${dEndCol}${i})` };
+  for (let c=0; c<dCols.length; c++) {
+    const col = XLSX.utils.encode_col(3+c);
+    dWs[`${col}${dN+1}`] = { t:'n', f:`SUM(${col}2:${col}${dN})` };
   }
-  if (state.deductions.length > 0) {
-    const dTotalRow = dData.length + 1;
-    dWs[`A${dTotalRow}`] = { t: 's', v: 'TOPLAM' };
-    for (let c = 0; c < dCols.length; c++) {
-      const col = XLSX.utils.encode_col(3 + c);
-      dWs[`${col}${dTotalRow}`] = { t: 'n', f: `SUM(${col}2:${col}${dData.length})` };
-    }
-    dWs[`${dTotalColLetter}${dTotalRow}`] = { t: 'n', f: `SUM(${dTotalColLetter}2:${dTotalColLetter}${dData.length})` };
-    dWs['!ref'] = `A1:${dTotalColLetter}${dTotalRow}`;
-  }
-  dWs['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 26 }, ...dCols.map(() => ({ wch: 14 })), { wch: 14 }];
+  dWs[`${dTotCol}${dN+1}`] = { t:'n', f:`SUM(${dTotCol}2:${dTotCol}${dN})` };
+  dWs['!ref'] = `A1:${dTotCol}${dN+1}`;
+  dWs['!cols'] = [{wch:22},{wch:14},{wch:26},...dCols.map(()=>({wch:14})),{wch:14}];
+  dWs['!freeze'] = { xSplit: 0, ySplit: 1 };
+  const dNumCols = Array.from({length: dCols.length+1}, (_,i) => XLSX.utils.encode_col(3+i));
+  applyFmt(dWs, dNumCols, 2, dN+1, FMT_TL);
   XLSX.utils.book_append_sheet(wb, dWs, 'Kesintiler');
-  
-  // ====== 5) TAHSİLAT ======
-  const cHeader = ['Vade', 'Müşteri', 'Sözleşme Tar.', 'Açıklama', 'Plan TL', 'Gerç. Tar.', 'Gerç. TL', 'Durum'];
-  const cData = [cHeader, ...state.collections.map(c => [
-    c.dueDate, c.customer || '', c.contractDate || '', c.desc || '',
-    c.planAmount || 0, c.actualDate || '', c.actualAmount || 0,
-    getCollectionStatus(c).label
+
+  // ============================================================
+  // SAYFA 5 — TAHSİLAT
+  // ============================================================
+  const cHeader = ['Vade','Müşteri','Sözleşme Tar.','Açıklama','Plan TL','Gerç. Tarihi','Gerç. TL','Durum'];
+  const cRows = [cHeader, ...state.collections.map(c=>[
+    c.dueDate, c.customer||'', c.contractDate||'', c.desc||'',
+    c.planAmount||0, c.actualDate||'', c.actualAmount||0, getCollectionStatus(c).label
   ])];
-  const cWs = XLSX.utils.aoa_to_sheet(cData);
-  if (state.collections.length > 0) {
-    const cTotalRow = cData.length + 1;
-    cWs[`A${cTotalRow}`] = { t: 's', v: 'TOPLAM' };
-    cWs[`E${cTotalRow}`] = { t: 'n', f: `SUM(E2:E${cData.length})` };
-    cWs[`G${cTotalRow}`] = { t: 'n', f: `SUM(G2:G${cData.length})` };
-    cWs['!ref'] = `A1:H${cTotalRow}`;
-  }
-  cWs['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 14 }];
+  const cN = cRows.length;
+  cRows.push(['TOPLAM','','','',null,'',null,'']);
+  const cWs = XLSX.utils.aoa_to_sheet(cRows);
+  cWs[`E${cN+1}`] = { t:'n', f:`SUM(E2:E${cN})` };
+  cWs[`G${cN+1}`] = { t:'n', f:`SUM(G2:G${cN})` };
+  cWs['!ref'] = `A1:H${cN+1}`;
+  cWs['!cols'] = [{wch:12},{wch:24},{wch:14},{wch:22},{wch:16},{wch:14},{wch:16},{wch:12}];
+  cWs['!freeze'] = { xSplit: 0, ySplit: 1 };
+  applyFmt(cWs, ['E','G'], 2, cN+1, FMT_TL);
+  applyFmt(cWs, ['A','F'], 2, cN, FMT_DATE);
   XLSX.utils.book_append_sheet(wb, cWs, 'Tahsilat');
-  
-  // ====== 6) NAKİT AKIŞ ======
-  const cf = computeCashflow();
-  const cfHeader = ['Ay', 'USD/TRY', 'Plan Harcama TL', 'Gerç. Harcama TL', 'Plan Tahsilat TL', 'Gerç. Tahsilat TL', 'Net TL', 'Kümülatif TL', 'Kümülatif USD'];
-  const cfData = [cfHeader];
+
+  // ============================================================
+  // SAYFA 6 — NAKİT AKIŞ (TL + USD)
+  // ============================================================
+  const cfHeader = [
+    'Ay','USD/TRY',
+    'Plan Harcama TL','Plan Harcama USD',
+    'Gerç. Harcama TL','Gerç. Harcama USD',
+    'Plan Tahsilat TL','Plan Tahsilat USD',
+    'Gerç. Tahsilat TL','Gerç. Tahsilat USD',
+    'Net Akış TL','Net Akış USD',
+    'Küm. Finansman TL','Küm. Finansman USD'
+  ];
+  const cfRows = [cfHeader];
   cf.forEach(r => {
-    cfData.push([r.month, r.fx, r.planTry, r.actualTry, r.collectionPlanTry, r.collectionActualTry, null, null, null]);
+    cfRows.push([
+      r.month, r.fx,
+      r.planTry, r.planUsd,
+      r.actualTry, r.actualUsd,
+      r.collectionPlanTry, r.collectionPlanUsd,
+      r.collectionActualTry, r.collectionActualUsd,
+      null, null, null, null
+    ]);
   });
-  const cfWs = XLSX.utils.aoa_to_sheet(cfData);
-  for (let i = 2; i <= cfData.length; i++) {
-    cfWs[`G${i}`] = { t: 'n', f: `F${i}-D${i}` };
-    cfWs[`H${i}`] = { t: 'n', f: i === 2 ? `G${i}` : `H${i-1}+G${i}` };
-    cfWs[`I${i}`] = { t: 'n', f: `H${i}/B${i}` };
+  const cfN = cfRows.length;
+  cfRows.push(['TOPLAM','',null,null,null,null,null,null,null,null,null,null,null,null]);
+  const cfWs = XLSX.utils.aoa_to_sheet(cfRows);
+  for (let i = 2; i <= cfN; i++) {
+    cfWs[`K${i}`] = { t:'n', f:`I${i}-E${i}` };           // Net TL = Gerç.Tahsilat - Gerç.Harcama
+    cfWs[`L${i}`] = { t:'n', f:`J${i}-F${i}` };           // Net USD
+    cfWs[`M${i}`] = { t:'n', f: i===2 ? `K${i}` : `M${i-1}+K${i}` }; // Küm TL
+    cfWs[`N${i}`] = { t:'n', f: i===2 ? `L${i}` : `N${i-1}+L${i}` }; // Küm USD
   }
-  cfWs['!cols'] = [{ wch: 10 }, { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 18 }, { wch: 18 }];
+  ['C','D','E','F','G','H','I','J'].forEach(col => {
+    cfWs[`${col}${cfN+1}`] = { t:'n', f:`SUM(${col}2:${col}${cfN})` };
+  });
+  cfWs['!ref'] = `A1:N${cfN+1}`;
+  cfWs['!cols'] = [{wch:10},{wch:9},{wch:16},{wch:16},{wch:16},{wch:16},{wch:16},{wch:16},{wch:16},{wch:16},{wch:14},{wch:14},{wch:18},{wch:18}];
+  cfWs['!freeze'] = { xSplit: 0, ySplit: 1 };
+  applyFmt(cfWs, ['C','E','G','I','K','M'], 2, cfN+1, FMT_TL);
+  applyFmt(cfWs, ['D','F','H','J','L','N'], 2, cfN+1, FMT_USD);
+  applyFmt(cfWs, ['B'], 2, cfN, FMT_NUM);
   XLSX.utils.book_append_sheet(wb, cfWs, 'Nakit Akış');
-  
-  // ====== 7) İŞ PROGRAMI ======
-  const progHeader = ['Kod', 'Kalem', 'Başlangıç', 'Bitiş', 'Süre (Ay)', 'Eğri', 'Toplam USD', 'ID'];
-  const progData = [progHeader];
-  getLeafBudgetItems().sort((a,b) => a.code.localeCompare(b.code)).forEach(b => {
+
+  // ============================================================
+  // SAYFA 7 — İŞ PROGRAMI
+  // ============================================================
+  const progHeader = ['Kod','Kalem','Başlangıç','Bitiş','Süre (Ay)','Eğri','Baz Bütçe USD','Gerçekleşme USD','Kalan USD'];
+  const progRows = [progHeader];
+  getLeafBudgetItems().sort((a,b)=>a.code.localeCompare(b.code)).forEach(b => {
     const p = state.program[b.id] || {};
     const months = (p.start && p.end) ? getMonthsInRange(p.start, p.end).length : '';
-    progData.push([b.code, b.name, p.start || '', p.end || '', months, labelCurve(p.curve || ''), getBudgetItemTotalUsd(b), b.id]);
+    const baseUsd = getBudgetItemTotalUsd(b);
+    const actUsd  = getBudgetItemActualUsd(b);
+    progRows.push([b.code, b.name, p.start||'', p.end||'', months, labelCurve(p.curve||''), baseUsd, actUsd||'', null]);
   });
-  const progWs = XLSX.utils.aoa_to_sheet(progData);
-  progWs['!cols'] = [{ wch: 14 }, { wch: 32 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 18 }, { wch: 16 }, { wch: 18 }];
+  const prN = progRows.length;
+  progRows.push(['TOPLAM','','','','','',null,null,null]);
+  const progWs = XLSX.utils.aoa_to_sheet(progRows);
+  for (let i=2; i<=prN; i++) progWs[`I${i}`] = { t:'n', f:`G${i}-IF(H${i}="",0,H${i})` };
+  ['G','H','I'].forEach(col => { progWs[`${col}${prN+1}`] = { t:'n', f:`SUM(${col}2:${col}${prN})` }; });
+  progWs['!ref'] = `A1:I${prN+1}`;
+  progWs['!cols'] = [{wch:14},{wch:32},{wch:12},{wch:12},{wch:10},{wch:16},{wch:16},{wch:16},{wch:14}];
+  progWs['!freeze'] = { xSplit: 0, ySplit: 1 };
+  applyFmt(progWs, ['G','H','I'], 2, prN+1, FMT_USD);
   XLSX.utils.book_append_sheet(wb, progWs, 'İş Programı');
-  
-  // ====== 8) ÖZET ======
+
+  // ============================================================
+  // SAYFA 8 — ÖZET
+  // ============================================================
+  const today2 = new Date().toLocaleDateString('tr-TR');
+  const leaves2 = getLeafBudgetItems();
+  const landCode = state.settings.landAccountCode || '';
+  const landUsd = landCode
+    ? leaves2.filter(b=>b.code===landCode||b.code.startsWith(landCode+'.')).reduce((s,b)=>s+getBudgetItemTotalUsd(b),0)
+    : 0;
+  const noLandUsd = overall.totalBudget - landUsd;
+
   const ozetData = [
     ['PROJE ÖZET RAPORU', '', '', ''],
     ['', '', '', ''],
-    ['Proje Adı', state.settings.projectName || '—', '', ''],
+    ['Proje Adı', state.settings.projectName||'', '', ''],
     ['Dönem', `${state.settings.startMonth} – ${state.settings.endMonth}`, '', ''],
-    ['İnşaat Alanı (m²)', state.settings.totalArea || 0, '', ''],
-    ['Satılabilir Alan (m²)', state.settings.salableArea || 0, '', ''],
+    ['İnşaat Alanı (m²)', state.settings.totalArea||0, '', ''],
+    ['Satılabilir Alan (m²)', state.settings.salableArea||0, '', ''],
     ['USD/TRY (bugün)', fx, '', ''],
-    ['Rapor Tarihi', new Date().toLocaleDateString('tr-TR'), '', ''],
+    ['Rapor Tarihi', today2, '', ''],
     ['', '', '', ''],
-    ['ANA METRİKLER', 'USD', 'TL', ''],
-    ['Toplam Bütçe', null, null, ''],
-    ['Gerçekleşme', overall.totalActual, null, ''],
+    ['', 'USD', 'TL', ''],
+    ['ANA METRİKLER', '', '', ''],
+    ['Toplam Baz Bütçe', null, null, ''],      // B12, C12
+    ['Toplam Revize Bütçe', null, null, ''],   // B13, C13
+    ['Toplam Gerçekleşme', overall.totalActualUsd||0, null, ''],
     ['Fiziksel İlerleme %', overall.physicalPct, '', ''],
-    ['Finansal İlerleme %', overall.financialPct, '', ''],
-    ['SPI', overall.spi, '', ''],
+    ['Finansal İlerleme (USD) %', overall.financialPctUsd, '', ''],
+    ['Finansal İlerleme (TL) %', overall.financialPctTry, '', ''],
+    ['SPI', overall.spi||0, '', ''],
     ['EAC (Tahmini Bitiş Maliyeti)', null, null, ''],
     ['Tahmini Bitiş Tarihi', overall.etaDate ? overall.etaDate.toLocaleDateString('tr-TR') : '—', '', ''],
     ['', '', '', ''],
-    ['KATEGORİ KIRILIMI', 'Bütçe USD', 'Gerç. USD', '%'],
+    ['', 'Bütçe USD', 'Gerç. USD', 'Gerç. %'],
+    ['KATEGORİ KIRILIMI', '', '', ''],
   ];
+  const catStartRow = ozetData.length + 1;
   Object.keys(cats).forEach(key => {
     const c = cats[key];
-    if (c.budgetUsd === 0 && c.actualUsd === 0) return;
+    if (c.budgetUsd===0 && c.actualUsd===0) return;
     ozetData.push([c.label, c.budgetUsd, c.actualUsd, null]);
   });
   ozetData.push(['', '', '', '']);
-  ozetData.push(['m² MALİYET (USD/m²)', '', '', '']);
-  const landCode = state.settings.landAccountCode || '';
-  const leaves = getLeafBudgetItems();
-  const landUsd = landCode 
-    ? leaves.filter(b => b.code === landCode || b.code.startsWith(landCode + '.') || b.code.startsWith(landCode))
-        .reduce((s, b) => s + getBudgetItemTotalUsd(b), 0)
-    : 0;
-  const noLandUsd = overall.totalBudget - landUsd;
+  ozetData.push(['m² MALİYET (USD/m²)', 'Arsa Hariç', 'Arsa Dahil', '']);
   if (state.settings.totalArea > 0) {
-    ozetData.push(['İnşaat m² / Arsa Hariç', noLandUsd / state.settings.totalArea, '', '']);
-    ozetData.push(['İnşaat m² / Arsa Dahil', overall.totalBudget / state.settings.totalArea, '', '']);
+    ozetData.push(['İnşaat m² Maliyeti', noLandUsd/state.settings.totalArea, overall.totalBudget/state.settings.totalArea, '']);
   }
   if (state.settings.salableArea > 0) {
-    ozetData.push(['Satılabilir m² / Arsa Hariç', noLandUsd / state.settings.salableArea, '', '']);
-    ozetData.push(['Satılabilir m² / Arsa Dahil', overall.totalBudget / state.settings.salableArea, '', '']);
+    ozetData.push(['Satılabilir m² Maliyeti', noLandUsd/state.settings.salableArea, overall.totalBudget/state.settings.salableArea, '']);
   }
+
   const ozetWs = XLSX.utils.aoa_to_sheet(ozetData);
-  // Bağlantılı formüller
-  const budgetTotalRow = sortedBudget.length + 2;
-  ozetWs['B11'] = { t: 'n', f: `Bütçe!I${budgetTotalRow}` };
-  ozetWs['C11'] = { t: 'n', f: `Bütçe!J${budgetTotalRow}` };
-  ozetWs['C12'] = { t: 'n', f: `B12*${fx}` };
-  ozetWs['B16'] = { t: 'n', f: `IFERROR(B11/B15, B11)` }; // EAC = Bütçe / SPI
-  ozetWs['C16'] = { t: 'n', f: `B16*${fx}` };
+  // Bütçe sayfasına bağlantılı formüller
+  const bTotRow = sortedBudget.length + 2;
+  ozetWs['B12'] = { t:'n', f:`Bütçe!J${bTotRow}` };  // Baz Bütçe USD
+  ozetWs['C12'] = { t:'n', f:`Bütçe!K${bTotRow}` };  // Baz Bütçe TL
+  ozetWs['B13'] = { t:'n', f:`IFERROR(Bütçe!L${bTotRow}, Bütçe!J${bTotRow})` }; // Revize
+  ozetWs['C13'] = { t:'n', f:`B13*${fx}` };
+  ozetWs['C14'] = { t:'n', f:`B14*${fx}` };           // Gerçekleşme TL
+  ozetWs['B19'] = { t:'n', f:`IFERROR(B12/B18,B12)` }; // EAC
+  ozetWs['C19'] = { t:'n', f:`B19*${fx}` };
   // Kategori % formülleri
-  let catStartRow = 20;
+  let catR = catStartRow;
   Object.keys(cats).forEach((key, i) => {
     const c = cats[key];
-    if (c.budgetUsd === 0 && c.actualUsd === 0) return;
-    const rowIdx = catStartRow + i;
-    ozetWs[`D${rowIdx}`] = { t: 'n', f: `IFERROR(C${rowIdx}/B${rowIdx}*100, 0)` };
+    if (c.budgetUsd===0 && c.actualUsd===0) return;
+    ozetWs[`D${catR}`] = { t:'n', f:`IFERROR(C${catR}/B${catR}*100,0)` };
+    catR++;
   });
-  ozetWs['!cols'] = [{ wch: 34 }, { wch: 18 }, { wch: 18 }, { wch: 12 }];
+  ozetWs['!cols'] = [{wch:34},{wch:18},{wch:18},{wch:12}];
+  applyFmt(ozetWs, ['B','C'], 12, 14, FMT_USD);
+  applyFmt(ozetWs, ['C'], 12, 14, FMT_TL);
+  applyFmt(ozetWs, ['B'], 15, 17, FMT_PCT);
   XLSX.utils.book_append_sheet(wb, ozetWs, 'Özet');
-  
-  // Save
-  const today = new Date().toISOString().substring(0, 10);
-  const projName = (state.settings.projectName || 'proje').replace(/\s+/g, '_');
-  XLSX.writeFile(wb, `${projName}_${today}.xlsx`);
+
+  // İndir
+  const projName = (state.settings.projectName||'proje').replace(/\s+/g,'_');
+  const dateStr = new Date().toISOString().substring(0,10);
+  XLSX.writeFile(wb, `${projName}_${dateStr}.xlsx`);
 }
+  
 
 function exportBudgetCsv() {
   const headers = ['Kod', 'Seviye', 'Kalem', 'Tedarikçi', 'Miktar', 'Birim', 'Birim Fiyat USD', 'Toplam USD', 'Toplam TL'];
@@ -6075,7 +5993,7 @@ function downloadCsv(filename, headers, rows) {
 // ============================================================
 // INIT
 // ============================================================
-// INIT — DOMContentLoaded sonrası çalış ki gömülü veri scripti DOM'da olsun
+// INIT — DOMContentLoaded sonrası çalış
 async function _bna_init() {
   await loadApp();
   // Yönetici şifresi yoksa edit-mode'da aç (sistem henüz kurulmamış)
