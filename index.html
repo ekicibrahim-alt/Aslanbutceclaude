@@ -298,7 +298,16 @@ body.view-mode .lock-status * {
 
 .kpi-card .value-secondary {
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-top: 3px;
+}
+
+/* Açıklama metinleri (% değil, para değil) için daha soluk stil */
+.kpi-card .value-note {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 11px;
   color: var(--text-muted);
   margin-top: 4px;
 }
@@ -677,21 +686,26 @@ body.view-mode .lock-status * {
     </div>
 
     <!-- İlerleme KPI'lar -->
-    <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr);">
       <div class="kpi-card">
         <div class="label">Fiziksel İlerleme (Plan)</div>
         <div class="value" id="kpi-progress-physical">—</div>
-        <div class="value-secondary">İş programından zaman bazlı</div>
+        <div class="value-note" id="kpi-progress-physical-note">İş programı (USD bazlı)</div>
       </div>
       <div class="kpi-card highlight">
-        <div class="label">Finansal İlerleme (Gerçek)</div>
-        <div class="value" id="kpi-progress-financial">—</div>
-        <div class="value-secondary">Fatura toplamı / bütçe</div>
+        <div class="label">Finansal İlerleme (USD)</div>
+        <div class="value" id="kpi-progress-financial-usd">—</div>
+        <div class="value-note">Fatura USD / Bütçe USD</div>
+      </div>
+      <div class="kpi-card highlight">
+        <div class="label">Finansal İlerleme (TL)</div>
+        <div class="value" id="kpi-progress-financial-try">—</div>
+        <div class="value-note">Fatura TL / Bütçe TL (güncel kur)</div>
       </div>
       <div class="kpi-card" id="kpi-spi-card">
         <div class="label">Performans Endeksi (SPI)</div>
         <div class="value" id="kpi-spi">—</div>
-        <div class="value-secondary" id="kpi-spi-comment">—</div>
+        <div class="value-note" id="kpi-spi-comment">—</div>
       </div>
     </div>
 
@@ -705,7 +719,7 @@ body.view-mode .lock-status * {
       <div class="kpi-card">
         <div class="label">Tahmini Bitiş Tarihi</div>
         <div class="value" id="kpi-eta">—</div>
-        <div class="value-secondary" id="kpi-eta-delay">—</div>
+        <div class="value-note" id="kpi-eta-delay">—</div>
       </div>
     </div>
 
@@ -742,22 +756,22 @@ body.view-mode .lock-status * {
         <div class="kpi-card">
           <div class="label">İnşaat m² / Arsa Hariç</div>
           <div class="value" id="kpi-m2-const-noland-usd">—</div>
-          <div class="value-secondary" id="kpi-m2-const-noland-try">—</div>
+          <div class="value-note" id="kpi-m2-const-noland-try">—</div>
         </div>
         <div class="kpi-card">
           <div class="label">İnşaat m² / Arsa Dahil</div>
           <div class="value" id="kpi-m2-const-land-usd">—</div>
-          <div class="value-secondary" id="kpi-m2-const-land-try">—</div>
+          <div class="value-note" id="kpi-m2-const-land-try">—</div>
         </div>
         <div class="kpi-card highlight">
           <div class="label">Satılabilir m² / Arsa Hariç</div>
           <div class="value" id="kpi-m2-sal-noland-usd">—</div>
-          <div class="value-secondary" id="kpi-m2-sal-noland-try">—</div>
+          <div class="value-note" id="kpi-m2-sal-noland-try">—</div>
         </div>
         <div class="kpi-card highlight">
           <div class="label">Satılabilir m² / Arsa Dahil</div>
           <div class="value" id="kpi-m2-sal-land-usd">—</div>
-          <div class="value-secondary" id="kpi-m2-sal-land-try">—</div>
+          <div class="value-note" id="kpi-m2-sal-land-try">—</div>
         </div>
       </div>
     </div>
@@ -773,12 +787,12 @@ body.view-mode .lock-status * {
             <tr>
               <th>Kod</th>
               <th>Kalem</th>
-              <th class="right">Bütçe (USD)</th>
-              <th class="right">Gerçekleşme (USD)</th>
+              <th class="right">Bütçe<br><span style="font-size: 10px; color: var(--text-muted); font-weight: 400;">USD / TL</span></th>
+              <th class="right">Gerçekleşme<br><span style="font-size: 10px; color: var(--text-muted); font-weight: 400;">USD / TL</span></th>
               <th class="right">Fiz. %</th>
               <th class="right">Fin. %</th>
               <th class="right">Sapma</th>
-              <th class="right">Tahmini Maliyet (USD)</th>
+              <th class="right">Tahmini Maliyet<br><span style="font-size: 10px; color: var(--text-muted); font-weight: 400;">USD / TL</span></th>
               <th class="center">Tahmini Bitiş</th>
               <th class="center">Durum</th>
             </tr>
@@ -810,9 +824,8 @@ body.view-mode .lock-status * {
   <!-- BÜTÇE TAB -->
   <section class="tab-content" data-tab-content="butce">
     <div class="note">
-      <strong>Bütçe kalemleri:</strong> Hiyerarşik hesap kodu yapısı (6 seviyeye kadar destekler). 
-      Her kalem için miktar × birim fiyat = toplam. Birim fiyat USD bazlı, ayarlardaki çeyreklik kura göre TL'ye dönüşür.
-      <strong>Demo veri</strong> örnek bir karma kullanım inşaat projesi baseline'ı olarak yüklü — sen üzerine düzenleyebilir, silebilir, ekleyebilirsin.
+      <strong>Bütçe kalemleri:</strong> Hiyerarşik hesap kodu yapısı. Fatura hesap kodları bütçe kodlarıyla örtüşünce gerçekleşme otomatik hesaplanır.
+      <strong>Baz bütçe sabittir</strong> — aşım varsa "Revize Et" ile yeni bütçe oluşturursun, baz değişmez.
     </div>
     <div class="section">
       <div class="section-header">
@@ -826,16 +839,29 @@ body.view-mode .lock-status * {
         <table class="data-table">
           <thead>
             <tr>
-              <th>Kod</th>
-              <th>Kalem Adı</th>
-              <th>Tedarikçi/Not</th>
-              <th class="center">Tip</th>
-              <th class="right">Miktar</th>
-              <th class="center">Birim</th>
-              <th class="right">B.Fiyat (USD)</th>
-              <th class="right">Toplam (USD)</th>
-              <th class="right">Toplam (TL)</th>
-              <th class="center"></th>
+              <th rowspan="2">Kod</th>
+              <th rowspan="2">Kalem Adı</th>
+              <th rowspan="2">Tedarikçi/Not</th>
+              <th class="center" rowspan="2">Tip</th>
+              <th class="right" rowspan="2">Miktar</th>
+              <th class="center" rowspan="2">Birim</th>
+              <th class="right" rowspan="2">B.Fiyat</th>
+              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Baz Bütçe</th>
+              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(184,134,61,0.06);">Revize Bütçe</th>
+              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Gerçekleşme</th>
+              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Kalan</th>
+              <th class="center" rowspan="2">Durum</th>
+              <th class="center" rowspan="2"></th>
+            </tr>
+            <tr>
+              <th class="right" style="font-size: 10px; color: var(--text-muted);">USD</th>
+              <th class="right" style="font-size: 10px; color: var(--text-muted);">TL</th>
+              <th class="right" style="font-size: 10px; color: var(--accent); background: rgba(184,134,61,0.06);">USD</th>
+              <th class="right" style="font-size: 10px; color: var(--accent); background: rgba(184,134,61,0.06);">TL</th>
+              <th class="right" style="font-size: 10px; color: #2f6b48;">USD</th>
+              <th class="right" style="font-size: 10px; color: #2f6b48;">TL</th>
+              <th class="right" style="font-size: 10px; color: var(--text-muted);">USD</th>
+              <th class="right" style="font-size: 10px; color: var(--text-muted);">TL</th>
             </tr>
           </thead>
           <tbody id="budgetTableBody"></tbody>
@@ -1019,24 +1045,61 @@ body.view-mode .lock-status * {
         <table class="data-table">
           <thead>
             <tr>
-              <th class="center">Dönem</th>
-              <th class="center">USD/TRY</th>
-              <th class="right">Plan Harcama TL</th>
-              <th class="right">Gerç. Harcama TL</th>
-              <th class="right">Plan Tahsilat TL</th>
-              <th class="right">Gerç. Tahsilat TL</th>
-              <th class="right">Net Akış TL</th>
-              <th class="right">Kümülatif TL</th>
-              <th class="right">Kümülatif USD</th>
+              <th class="center" rowspan="2">Dönem</th>
+              <th class="center" rowspan="2">USD/TRY</th>
+              <th class="right" colspan="2">Plan Harcama</th>
+              <th class="right" colspan="2">Gerç. Harcama</th>
+              <th class="right" colspan="2">Plan Tahsilat</th>
+              <th class="right" colspan="2">Gerç. Tahsilat</th>
+              <th class="right" colspan="2">Net Akış</th>
+              <th class="right" colspan="2">Kümülatif Finansman</th>
+            </tr>
+            <tr>
+              <th class="right" style="font-size: 10px; color: var(--text-muted);">TL</th>
+              <th class="right" style="font-size: 10px; color: var(--accent);">USD</th>
+              <th class="right" style="font-size: 10px; color: var(--text-muted);">TL</th>
+              <th class="right" style="font-size: 10px; color: var(--accent);">USD</th>
+              <th class="right" style="font-size: 10px; color: var(--text-muted);">TL</th>
+              <th class="right" style="font-size: 10px; color: var(--accent);">USD</th>
+              <th class="right" style="font-size: 10px; color: var(--text-muted);">TL</th>
+              <th class="right" style="font-size: 10px; color: var(--accent);">USD</th>
+              <th class="right" style="font-size: 10px; color: var(--text-muted);">TL</th>
+              <th class="right" style="font-size: 10px; color: var(--accent);">USD</th>
+              <th class="right" style="font-size: 10px; color: var(--text-muted);">TL</th>
+              <th class="right" style="font-size: 10px; color: var(--accent);">USD</th>
             </tr>
           </thead>
           <tbody id="cashflowTableBody"></tbody>
         </table>
       </div>
     </div>
-  </section>
 
-  <!-- AYARLAR TAB -->
+    <!-- USD Nakit Akış Özet Tablosu -->
+    <div class="section" style="margin-top: 16px;">
+      <div class="section-header">
+        <h2 class="section-title">Aylık Nakit Akış — USD Özeti</h2>
+        <div class="section-actions">
+          <span style="font-size: 11px; color: var(--text-muted);">Fatura kuru ile USD'ye çevrilen gerçek değerler</span>
+        </div>
+      </div>
+      <div style="overflow-x: auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th class="center">Dönem</th>
+              <th class="right">Plan Harcama USD</th>
+              <th class="right">Gerç. Harcama USD</th>
+              <th class="right">Plan Tahsilat USD</th>
+              <th class="right">Gerç. Tahsilat USD</th>
+              <th class="right">Net Akış USD</th>
+              <th class="right">Kümülatif Finansman USD</th>
+            </tr>
+          </thead>
+          <tbody id="cashflowUsdTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
   <section class="tab-content" data-tab-content="ayarlar">
     <div class="section">
       <div class="section-header">
@@ -1236,7 +1299,17 @@ body.view-mode .lock-status * {
     <div class="form-row form-row-3">
       <div class="form-field"><label>Miktar</label><input type="number" id="bm-qty" step="0.01"></div>
       <div class="form-field"><label>Birim</label><input type="text" id="bm-unit" placeholder="m²/m³/adet/lump"></div>
-      <div class="form-field"><label>Birim Fiyat (USD)</label><input type="number" id="bm-unitPrice" step="0.01"></div>
+      <div class="form-field">
+        <label>Birim Fiyat</label>
+        <div style="display: flex; gap: 4px;">
+          <input type="number" id="bm-unitPrice" step="0.01" style="flex: 1;">
+          <select id="bm-currency" style="width: 70px; flex-shrink: 0;">
+            <option value="USD">USD</option>
+            <option value="TRY">TRY</option>
+          </select>
+        </div>
+        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Para birimi seç (Ana kategorilere fiyat girme — alt kalemlerden toplanır)</div>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeBudgetModal()">İptal</button>
@@ -2576,30 +2649,168 @@ function distributeOverCurve(total, n, curve) {
 
 // Get only level-5 (or leaf) items for actual cost calculation
 function getLeafBudgetItems() {
-  return state.budget.filter(b => {
-    // an item is leaf if no other item starts with code + '.'
-    return !state.budget.some(other => other.id !== b.id && other.code.startsWith(b.code + '.'));
+  return state.budget.filter(b => isBudgetLeaf(b));
+}
+
+// Bir kalemin alt kalemi var mı? (kod hiyerarşisine göre)
+function isBudgetLeaf(b) {
+  return !state.budget.some(other => other.id !== b.id && other.code.startsWith(b.code + '.'));
+}
+
+// Doğrudan alt kalemleri döndürür (bir seviye altı)
+function getDirectChildren(b) {
+  return state.budget.filter(other => {
+    if (other.id === b.id) return false;
+    if (!other.code.startsWith(b.code + '.')) return false;
+    // Sadece bir seviye altı: kod farkı . ile bir kez bölünmeli
+    const suffix = other.code.substring(b.code.length + 1);
+    return !suffix.includes('.');
   });
 }
 
+// Bir kalemin tüm yaprak (leaf) alt kalemlerini döndürür (recursive)
+function getDescendantLeaves(b) {
+  if (isBudgetLeaf(b)) return [b];
+  const descendants = state.budget.filter(other => 
+    other.id !== b.id && other.code.startsWith(b.code + '.')
+  );
+  return descendants.filter(d => isBudgetLeaf(d));
+}
+
+// Bir bütçe kaleminin USD toplamı — ana kategori ise alt kalemlerin toplamı
 function getBudgetItemTotalUsd(b) {
-  return (b.qty || 0) * (b.unitPrice || 0);
+  // Yaprak değilse — alt kalemlerin toplamı
+  if (!isBudgetLeaf(b)) {
+    return getDescendantLeaves(b).reduce((sum, leaf) => sum + getLeafItemUsd(leaf), 0);
+  }
+  return getLeafItemUsd(b);
+}
+
+// Sadece yaprak kalem için (kendi miktar × birim fiyat, currency dönüşümlü)
+function getLeafItemUsd(b) {
+  const total = (b.qty || 0) * (b.unitPrice || 0);
+  if (b.currency === 'TRY') {
+    const fx = getBudgetItemFx(b);
+    return fx > 0 ? total / fx : 0;
+  }
+  return total;
+}
+
+// Bütçe kalemi için referans FX kuru
+function getBudgetItemFx(b) {
+  const prog = state.program[b.id];
+  if (prog && prog.start) return getFxForMonth(prog.start);
+  // Yaprak değilse alt kalemlerin programlarına bak
+  if (!isBudgetLeaf(b)) {
+    const leaves = getDescendantLeaves(b);
+    for (const leaf of leaves) {
+      const p = state.program[leaf.id];
+      if (p && p.start) return getFxForMonth(p.start);
+    }
+  }
+  return getCurrentFx();
 }
 
 function getBudgetItemTotalTry(b) {
-  const totalUsd = getBudgetItemTotalUsd(b);
-  // İş programı tanımlıysa o ayın kurunu kullan (cash flow planlamasıyla tutarlı)
-  const prog = state.program[b.id];
-  if (prog && prog.start) {
-    return totalUsd * getFxForMonth(prog.start);
+  // Yaprak değilse — alt kalemlerin TL toplamı
+  if (!isBudgetLeaf(b)) {
+    return getDescendantLeaves(b).reduce((sum, leaf) => sum + getLeafItemTry(leaf), 0);
   }
-  // Program yoksa: bugünkü gerçek kur (günlük tablo varsa oradan, yoksa bugünün çeyreği)
-  return totalUsd * getCurrentFx();
+  return getLeafItemTry(b);
+}
+
+function getLeafItemTry(b) {
+  const total = (b.qty || 0) * (b.unitPrice || 0);
+  if (b.currency === 'TRY') {
+    return total;
+  }
+  return total * getBudgetItemFx(b);
+}
+
+// Bir ana kategorinin alt kalemlerinin iş programı tarihlerinden başlangıç/bitiş türet
+function getDerivedProgramRange(b) {
+  if (isBudgetLeaf(b)) return null;
+  const leaves = getDescendantLeaves(b);
+  let minStart = null, maxEnd = null;
+  leaves.forEach(leaf => {
+    const p = state.program[leaf.id];
+    if (p && p.start) {
+      if (!minStart || p.start < minStart) minStart = p.start;
+    }
+    if (p && p.end) {
+      if (!maxEnd || p.end > maxEnd) maxEnd = p.end;
+    }
+  });
+  if (!minStart || !maxEnd) return null;
+  return { start: minStart, end: maxEnd, derived: true };
 }
 
 // ============================================================
-// İLERLEME HESAPLAMALARI
+// BÜTÇE GERÇEKLEŞMESİ — Hesap Kodu Eşleştirme
 // ============================================================
+
+// Bir bütçe kalemine ait faturaları bul (hesap kodu örtüşmesine göre)
+function getInvoicesForBudgetItem(b) {
+  if (!b.code) return [];
+  return state.invoices.filter(inv => {
+    if (!inv.code) return false;
+    const invCode = inv.code.trim();
+    const bCode = b.code.trim();
+    // Tam eşleşme VEYA fatura kodu bütçe kodunun alt kalemi
+    return invCode === bCode || invCode.startsWith(bCode + '.') || invCode.startsWith(bCode + '-');
+  });
+}
+
+// Bir bütçe kalemi için gerçekleşen toplam USD
+function getBudgetItemActualUsd(b) {
+  if (!isBudgetLeaf(b)) {
+    // Ana kategori: alt kalemlerin toplamı
+    return getDescendantLeaves(b).reduce((sum, leaf) => sum + getBudgetItemActualUsd(leaf), 0);
+  }
+  const invoices = getInvoicesForBudgetItem(b);
+  const fx = getBudgetItemFx(b);
+  return invoices.reduce((sum, inv) => {
+    const c = calcInvoiceTotals(inv);
+    const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
+    return sum + (c.grandTotal / invFx);
+  }, 0);
+}
+
+// Bir bütçe kalemi için gerçekleşen toplam TL
+function getBudgetItemActualTry(b) {
+  if (!isBudgetLeaf(b)) {
+    return getDescendantLeaves(b).reduce((sum, leaf) => sum + getBudgetItemActualTry(leaf), 0);
+  }
+  const invoices = getInvoicesForBudgetItem(b);
+  return invoices.reduce((sum, inv) => sum + calcInvoiceTotals(inv).grandTotal, 0);
+}
+
+// Revize bütçe kaydet
+async function reviseBudgetItem(id) {
+  if (!requireEdit()) return;
+  const b = state.budget.find(x => x.id === id);
+  if (!b) return;
+  const basUsd = getBudgetItemTotalUsd(b);
+  const actUsd = getBudgetItemActualUsd(b);
+  const mevcut = b.revisedBudgetUsd != null ? b.revisedBudgetUsd : basUsd;
+  const input = prompt(
+    `"${b.name}" kalemini revize et\n\n` +
+    `Baz Bütçe: ${fmtUSD(basUsd)}\n` +
+    `Gerçekleşme: ${fmtUSD(actUsd)}\n` +
+    `Mevcut Revize: ${b.revisedBudgetUsd != null ? fmtUSD(b.revisedBudgetUsd) : '(yok)'}\n\n` +
+    `Yeni revize bütçe (USD) gir:\n(Sıfır veya boş bırakırsan revize iptal olur)`,
+    mevcut.toFixed(0)
+  );
+  if (input === null) return; // iptal
+  const val = parseFloat(input);
+  if (!val || val <= 0) {
+    delete b.revisedBudgetUsd;
+  } else {
+    b.revisedBudgetUsd = val;
+  }
+  await saveState();
+  renderBudgetTable();
+}
 function getTargetDate() {
   const el = document.getElementById('targetDate');
   if (el && el.value) return new Date(el.value);
@@ -2710,14 +2921,15 @@ function computeItemProgress(code, budgetUsd) {
 function computeOverallProgress() {
   const target = getTargetDate();
   const leaves = getLeafBudgetItems();
-  let totalBudget = 0, totalPlanned = 0, totalActual = 0;
+  const fx = getCurrentFx();
+  let totalBudget = 0, totalPlanned = 0;
+  let totalActualUsd = 0, totalActualTry = 0;
   const targetKey = monthKey(target);
   
   leaves.forEach(b => {
     const budgetUsd = getBudgetItemTotalUsd(b);
     totalBudget += budgetUsd;
     
-    // Planned
     const prog = state.program[b.id];
     if (prog && prog.start && prog.end) {
       const itemMonths = getMonthsInRange(prog.start, prog.end);
@@ -2728,23 +2940,38 @@ function computeOverallProgress() {
     }
   });
   
-  // Actual - tüm faturalar target tarihine kadar
+  // Gerçekleşen faturalar — hem USD hem TL ayrı hesapla
   state.invoices.forEach(inv => {
     const invD = new Date(inv.date);
-    if (invD <= target && inv.fxRate && inv.fxRate > 0) {
-      totalActual += inv.amount / inv.fxRate;
-    }
+    if (invD > target) return;
+    const c = calcInvoiceTotals(inv);
+    // TL gerçekleşme: faturanın genel toplamı (KDV + stopaj + tevkifat dahil)
+    totalActualTry += c.grandTotal;
+    // USD gerçekleşme: fatura tarihindeki kur ile dönüştür
+    const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
+    totalActualUsd += c.grandTotal / invFx;
   });
   
+  // Toplam bütçe TL (güncel kur ile)
+  const totalBudgetTry = totalBudget * fx;
+  
+  // USD bazlı finansal ilerleme
+  const financialPctUsd = totalBudget > 0 ? (totalActualUsd / totalBudget) * 100 : 0;
+  // TL bazlı finansal ilerleme
+  const financialPctTry = totalBudgetTry > 0 ? (totalActualTry / totalBudgetTry) * 100 : 0;
+  // Geriye uyumluluk için tek değer (USD bazlı)
+  const financialPct = financialPctUsd;
+  const totalActual = totalActualUsd;
+  
+  // Fiziksel ilerleme — zaten USD bazlı (plan USD / bütçe USD)
   const physicalPct = totalBudget > 0 ? (totalPlanned / totalBudget) * 100 : 0;
-  const financialPct = totalBudget > 0 ? (totalActual / totalBudget) * 100 : 0;
-  const spi = totalPlanned > 0 ? (totalActual / totalPlanned) : null;
+  
+  const spi = totalPlanned > 0 ? (totalActualUsd / totalPlanned) : null;
   const eac = (spi && spi > 0) ? (totalBudget / spi) : totalBudget;
   
   // Proje bitiş tarihi tahmini
   let etaDate = null;
-  if (totalActual > 0 && totalBudget > 0) {
-    // Projenin tüm leaf'lerinin en erken start
+  if (totalActualUsd > 0 && totalBudget > 0) {
     let minStart = null;
     leaves.forEach(b => {
       const p = state.program[b.id];
@@ -2754,13 +2981,20 @@ function computeOverallProgress() {
       const startD = new Date(minStart + '-01');
       const elapsedMs = target - startD;
       if (elapsedMs > 0) {
-        const totalMs = elapsedMs * (totalBudget / totalActual);
+        const totalMs = elapsedMs * (totalBudget / totalActualUsd);
         etaDate = new Date(startD.getTime() + totalMs);
       }
     }
   }
   
-  return { totalBudget, totalPlanned, totalActual, physicalPct, financialPct, spi, eac, etaDate };
+  return {
+    totalBudget, totalBudgetTry,
+    totalPlanned,
+    totalActual, totalActualUsd, totalActualTry,
+    physicalPct,
+    financialPct, financialPctUsd, financialPctTry,
+    spi, eac, etaDate
+  };
 }
 
 // Kategori bazlı bütçe & gerçekleşme (kullanıcı tanımlı kategoriler)
@@ -2915,16 +3149,16 @@ function getFxFromQuarterlyFallback(date) {
 function renderKpis() {
   const overall = computeOverallProgress();
   const fx = getCurrentFx();
-  const totalBudgetTry = overall.totalBudget * fx;
-  const totalActualTry = overall.totalActual * fx;
+  const totalBudgetTry = overall.totalBudgetTry || (overall.totalBudget * fx);
+  // Gerçekleşme TL: artık computeOverallProgress'ten direkt geliyor (fatura tutarları)
+  const totalActualTry = overall.totalActualTry || 0;
   
   const collectedActual = state.collections.reduce((s, c) => s + (c.actualAmount || 0), 0);
   const collectedActualUsd = collectedActual / fx;
   
-  // Peak financing - based on cumulative cashflow
+  // Peak financing
   const cf = computeCashflow();
-  let peak = 0;
-  let peakUsd = 0;
+  let peak = 0, peakUsd = 0;
   cf.forEach(row => {
     if (-row.cumulativeTry > peak) {
       peak = -row.cumulativeTry;
@@ -2935,7 +3169,7 @@ function renderKpis() {
   document.getElementById('kpi-budget-try').textContent = fmtTL(totalBudgetTry);
   document.getElementById('kpi-budget-usd').textContent = fmtUSD(overall.totalBudget);
   document.getElementById('kpi-actual-try').textContent = fmtTL(totalActualTry);
-  document.getElementById('kpi-actual-usd').textContent = fmtUSD(overall.totalActual);
+  document.getElementById('kpi-actual-usd').textContent = fmtUSD(overall.totalActualUsd || overall.totalActual);
   document.getElementById('kpi-collected-try').textContent = fmtTL(collectedActual);
   document.getElementById('kpi-collected-usd').textContent = fmtUSD(collectedActualUsd);
   document.getElementById('kpi-peak-try').textContent = fmtTL(peak);
@@ -2943,7 +3177,14 @@ function renderKpis() {
   
   // İlerleme KPI'lar
   document.getElementById('kpi-progress-physical').textContent = fmtNum(overall.physicalPct, 1) + '%';
-  document.getElementById('kpi-progress-financial').textContent = fmtNum(overall.financialPct, 1) + '%';
+  const physNote = document.getElementById('kpi-progress-physical-note');
+  if (physNote) {
+    physNote.textContent = overall.totalBudget > 0
+      ? `${fmtUSD(overall.totalPlanned)} plan / ${fmtUSD(overall.totalBudget)} bütçe`
+      : 'İş programı henüz girilmedi';
+  }
+  document.getElementById('kpi-progress-financial-usd').textContent = fmtNum(overall.financialPctUsd, 1) + '%';
+  document.getElementById('kpi-progress-financial-try').textContent = fmtNum(overall.financialPctTry, 1) + '%';
   document.getElementById('kpi-spi').textContent = overall.spi !== null ? fmtNum(overall.spi, 2) : '—';
   
   const spiComment = document.getElementById('kpi-spi-comment');
@@ -3011,7 +3252,7 @@ function renderCategoryBreakdown() {
       <td class="right">${fmtTL(c.actualTry)}</td>
       <td class="right">${fmtUSD(c.actualUsd)}</td>
       <td class="right">${fmtNum(pct, 1)}%</td>
-      <td class="right">${fmtTL(remaining)}</td>
+      <td class="right">${fmtTL(remaining)}<br><span style="font-size: 11px; color: var(--text-muted);">${fmtUSD(remaining / fx)}</span></td>
     `;
     tbody.appendChild(tr);
   });
@@ -3019,6 +3260,7 @@ function renderCategoryBreakdown() {
   const tr = document.createElement('tr');
   tr.className = 'level-1';
   const totalPct = totalBudget > 0 ? (totalActualUsd / totalBudget) * 100 : 0;
+  const totalRemaining = (totalBudget - totalActualUsd) * fx;
   tr.innerHTML = `
     <td><strong>TOPLAM</strong></td>
     <td class="right">${fmtTL(totalBudget * fx)}</td>
@@ -3026,7 +3268,7 @@ function renderCategoryBreakdown() {
     <td class="right">${fmtTL(totalActualTry)}</td>
     <td class="right">${fmtUSD(totalActualUsd)}</td>
     <td class="right">${fmtNum(totalPct, 1)}%</td>
-    <td class="right">${fmtTL((totalBudget - totalActualUsd) * fx)}</td>
+    <td class="right">${fmtTL(totalRemaining)}<br><span style="font-size: 11px; color: var(--text-muted);">${fmtUSD(totalBudget - totalActualUsd)}</span></td>
   `;
   tbody.appendChild(tr);
 }
@@ -3102,15 +3344,16 @@ function renderMainItems() {
       : '—';
     
     const tr = document.createElement('tr');
+    const fx = getCurrentFx();
     tr.innerHTML = `
       <td class="mono">${b.code}</td>
       <td><strong>${b.name}</strong></td>
-      <td class="right">${fmtUSD(budgetUsd)}</td>
-      <td class="right">${fmtUSD(prog.actual)}</td>
+      <td class="right">${fmtUSD(budgetUsd)}<br><span style="font-size: 11px; color: var(--text-muted);">${fmtTL(budgetUsd * fx)}</span></td>
+      <td class="right">${fmtUSD(prog.actual)}<br><span style="font-size: 11px; color: var(--text-muted);">${fmtTL(prog.actual * fx)}</span></td>
       <td class="right">${fmtNum(prog.physicalPct, 1)}%</td>
       <td class="right">${fmtNum(prog.financialPct, 1)}%</td>
       <td class="right" style="color: ${varColor};">${prog.variancePct >= 0 ? '+' : ''}${fmtNum(prog.variancePct, 1)}%</td>
-      <td class="right">${fmtUSD(prog.eac)}</td>
+      <td class="right">${fmtUSD(prog.eac)}<br><span style="font-size: 11px; color: var(--text-muted);">${fmtTL(prog.eac * fx)}</span></td>
       <td class="center">${etaStr}</td>
       <td class="center"><span class="badge ${statusClass}">${statusBadge}</span></td>
     `;
@@ -3131,49 +3374,158 @@ function renderBudgetTable() {
   const tbody = document.getElementById('budgetTableBody');
   tbody.innerHTML = '';
   const sorted = [...state.budget].sort((a, b) => a.code.localeCompare(b.code));
-  
+  const fx = getCurrentFx();
+
+  // Toplam satırı için
+  let totalBaseUsd = 0, totalBaseTry = 0;
+  let totalRevUsd = 0, totalRevTry = 0;
+  let totalActUsd = 0, totalActTry = 0;
+  let totalRemUsd = 0, totalRemTry = 0;
+
   sorted.forEach(b => {
-    const totalUsd = getBudgetItemTotalUsd(b);
-    const totalTry = getBudgetItemTotalTry(b);
+    const isLeaf = isBudgetLeaf(b);
+    const baseUsd = getBudgetItemTotalUsd(b);
+    const baseTry = getBudgetItemTotalTry(b);
+    const actUsd  = getBudgetItemActualUsd(b);
+    const actTry  = getBudgetItemActualTry(b);
+    const revUsd  = b.revisedBudgetUsd != null ? b.revisedBudgetUsd : (isLeaf ? null : null);
+    const effUsd  = revUsd != null ? revUsd : baseUsd; // efektif bütçe (revize varsa revize, yoksa baz)
+    const effTry  = revUsd != null ? revUsd * fx : baseTry;
+    const remUsd  = effUsd - actUsd;
+    const remTry  = effTry - actTry;
+
+    // Toplam (sadece ana kök kalemler çift sayılmaması için tüm kalemlerin ekliyoruz, hiyerarşi ekranda)
+    if (!isBudgetLeaf(b)) {
+      // Toplam satırına sadece kök (level 1) ana kategorileri ekle
+      if (b.level === 1) {
+        totalBaseUsd += baseUsd; totalBaseTry += baseTry;
+        totalActUsd  += actUsd;  totalActTry  += actTry;
+        const revE = b.revisedBudgetUsd != null ? b.revisedBudgetUsd : baseUsd;
+        totalRevUsd  += revE;    totalRevTry  += revE * fx;
+        totalRemUsd  += remUsd;  totalRemTry  += remTry;
+      }
+    } else if (!sorted.some(p => p.id !== b.id && b.code.startsWith(p.code + '.') && p.level === 1)) {
+      // Kök level 1 yoksa yaprak direkt topla
+      totalBaseUsd += baseUsd; totalBaseTry += baseTry;
+      totalActUsd  += actUsd;  totalActTry  += actTry;
+      totalRevUsd  += effUsd;  totalRevTry  += effTry;
+      totalRemUsd  += remUsd;  totalRemTry  += remTry;
+    }
+
+    // Durum
+    let statusHtml;
+    const asilmis = actUsd > effUsd + 0.01;
+    const revize  = revUsd != null;
+    const tamam   = actUsd > 0 && !asilmis;
+    if (asilmis) {
+      statusHtml = `<span class="badge" style="background:#fdecea;color:#a44132;border:1px solid #f5c6c6;">⚠ Aşım</span>`;
+    } else if (revize) {
+      statusHtml = `<span class="badge" style="background:rgba(184,134,61,0.15);color:#7a5a1a;border:1px solid rgba(184,134,61,0.4);">🔄 Revize</span>`;
+    } else if (tamam) {
+      statusHtml = `<span class="badge badge-success">✓</span>`;
+    } else {
+      statusHtml = `<span style="color: var(--text-muted); font-size: 11px;">—</span>`;
+    }
+
     const tr = document.createElement('tr');
     tr.className = `level-${b.level}`;
+    if (!isLeaf) tr.style.fontWeight = '600';
+    if (asilmis) tr.style.background = 'rgba(164,65,50,0.04)';
+    else if (revize) tr.style.background = 'rgba(184,134,61,0.04)';
+
     const indent = '&nbsp;'.repeat((b.level - 1) * 3);
     const typeLabel = getCategoryLabel(b.materialType);
+    const ccy = b.currency || 'USD';
+    const ccyBadge = isLeaf
+      ? `<span style="font-size:9px;color:var(--text-muted);margin-left:3px;">${ccy === 'TRY' ? 'TL' : 'USD'}</span>`
+      : '';
+    const qtyCell   = isLeaf ? (b.qty ? fmtNum(b.qty, 0) : '—') : '<span style="color:var(--text-muted);font-style:italic;">∑</span>';
+    const unitCell  = isLeaf ? (b.unit || '—') : '—';
+    const priceCell = isLeaf
+      ? `${b.unitPrice ? fmtNum(b.unitPrice, 0) : '—'}${ccyBadge}`
+      : '<span style="color:var(--text-muted);font-style:italic;">alt kalemler</span>';
+
+    // Revize sütunu
+    const revUsdCell = revUsd != null
+      ? `<span style="color:var(--accent);font-weight:600;">${fmtUSD(revUsd)}</span>`
+      : '<span style="color:var(--text-muted);">—</span>';
+    const revTryCell = revUsd != null
+      ? `<span style="color:var(--accent);">${fmtTL(revUsd * fx)}</span>`
+      : '<span style="color:var(--text-muted);">—</span>';
+
+    // Kalan rengi
+    const remColor = remUsd < -0.01 ? 'color:#a44132;font-weight:600;' : (remUsd < effUsd * 0.1 ? 'color:#b86800;' : '');
+
+    // Revize butonu: sadece yaprak veya ana kategoride
+    const revBtn = `<button class="btn btn-ghost" style="font-size:11px;padding:2px 6px;" onclick="reviseBudgetItem('${b.id}')" title="Revize bütçe gir">Revize</button>`;
+
     tr.innerHTML = `
-      <td class="mono">${b.code}</td>
+      <td class="mono" style="font-size:12px;">${b.code}</td>
       <td>${indent}${b.name}</td>
-      <td>${b.supplier || '—'}</td>
+      <td style="font-size:12px;">${b.supplier || '—'}</td>
       <td class="center"><span class="tag">${typeLabel}</span></td>
-      <td class="right">${b.qty ? fmtNum(b.qty, 0) : '—'}</td>
-      <td class="center">${b.unit || '—'}</td>
-      <td class="right">${b.unitPrice ? fmtNum(b.unitPrice, 0) : '—'}</td>
-      <td class="right">${fmtUSD(totalUsd)}</td>
-      <td class="right">${fmtTL(totalTry)}</td>
-      <td class="center">
+      <td class="right">${qtyCell}</td>
+      <td class="center">${unitCell}</td>
+      <td class="right">${priceCell}</td>
+      <td class="right">${fmtUSD(baseUsd)}</td>
+      <td class="right" style="color:var(--text-muted);">${fmtTL(baseTry)}</td>
+      <td class="right" style="background:rgba(184,134,61,0.04);">${revUsdCell}</td>
+      <td class="right" style="background:rgba(184,134,61,0.04);">${revTryCell}</td>
+      <td class="right" style="color:#2f6b48;">${actUsd > 0 ? fmtUSD(actUsd) : '—'}</td>
+      <td class="right" style="color:#2f6b48;">${actTry > 0 ? fmtTL(actTry) : '—'}</td>
+      <td class="right" style="${remColor}">${fmtUSD(remUsd)}</td>
+      <td class="right" style="${remColor}">${fmtTL(remTry)}</td>
+      <td class="center">${statusHtml}</td>
+      <td class="center" style="white-space:nowrap;">
         <button class="btn btn-icon btn-ghost" onclick="editBudgetItem('${b.id}')">Düzenle</button>
         <button class="btn btn-danger" onclick="deleteBudgetItem('${b.id}')">Sil</button>
+        ${revBtn}
       </td>
     `;
     tbody.appendChild(tr);
   });
+
+  // Toplam satırı
+  if (sorted.length > 0) {
+    const totRemUsd = totalRevUsd - totalActUsd;
+    const totRemTry = totalRevTry - totalActTry;
+    const tr = document.createElement('tr');
+    tr.style.cssText = 'font-weight:700; border-top:2px solid var(--border-strong); background:var(--surface-2);';
+    tr.innerHTML = `
+      <td colspan="7" style="font-weight:700;">PROJE TOPLAMI</td>
+      <td class="right">${fmtUSD(totalBaseUsd)}</td>
+      <td class="right" style="color:var(--text-muted);">${fmtTL(totalBaseTry)}</td>
+      <td class="right" style="background:rgba(184,134,61,0.04);color:var(--accent);">${totalRevUsd !== totalBaseUsd ? fmtUSD(totalRevUsd) : '—'}</td>
+      <td class="right" style="background:rgba(184,134,61,0.04);color:var(--accent);">${totalRevTry !== totalBaseTry ? fmtTL(totalRevTry) : '—'}</td>
+      <td class="right" style="color:#2f6b48;">${totalActUsd > 0 ? fmtUSD(totalActUsd) : '—'}</td>
+      <td class="right" style="color:#2f6b48;">${totalActTry > 0 ? fmtTL(totalActTry) : '—'}</td>
+      <td class="right" style="${totRemUsd < 0 ? 'color:#a44132;font-weight:700;' : ''}">${fmtUSD(totRemUsd)}</td>
+      <td class="right" style="${totRemTry < 0 ? 'color:#a44132;font-weight:700;' : ''}">${fmtTL(totRemTry)}</td>
+      <td colspan="2"></td>
+    `;
+    tbody.appendChild(tr);
+  }
 }
 
 function renderProgramTable() {
   const tbody = document.getElementById('programTableBody');
   tbody.innerHTML = '';
+  
+  // Sadece yaprak kalemler (ana kategoriler iş programına çekilmez)
   const leaves = getLeafBudgetItems().sort((a, b) => a.code.localeCompare(b.code));
   
-  const items = programFilter === 'unscheduled' 
+  const items = programFilter === 'unscheduled'
     ? leaves.filter(b => !state.program[b.id])
     : leaves;
   
   items.forEach(b => {
     const prog = state.program[b.id] || {};
     const months = (prog.start && prog.end) ? getMonthsInRange(prog.start, prog.end).length : 0;
+    const indent = '&nbsp;'.repeat((b.level - 1) * 3);
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="mono">${b.code}</td>
-      <td>${b.name}</td>
+      <td>${indent}${b.name}</td>
       <td class="center">${prog.start ? fmtMonth(prog.start) : '<span class="badge badge-warning">Atanmamış</span>'}</td>
       <td class="center">${prog.end ? fmtMonth(prog.end) : '—'}</td>
       <td class="center">${months || '—'}</td>
@@ -3185,6 +3537,10 @@ function renderProgramTable() {
     `;
     tbody.appendChild(tr);
   });
+  
+  if (items.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Henüz bütçe kalemi yok veya tüm kalemler zamanlandı</td></tr>';
+  }
 }
 
 function labelCurve(c) {
@@ -3317,13 +3673,12 @@ function computeCashflow() {
   const data = months.map(m => ({
     month: m,
     fx: getFxForMonth(m),
-    planTry: 0,
-    actualTry: 0,
-    collectionPlanTry: 0,
-    collectionActualTry: 0,
-    netTry: 0,
-    cumulativeTry: 0,
-    cumulativeUsd: 0
+    planTry: 0, planUsd: 0,
+    actualTry: 0, actualUsd: 0,
+    collectionPlanTry: 0, collectionPlanUsd: 0,
+    collectionActualTry: 0, collectionActualUsd: 0,
+    netTry: 0, netUsd: 0,
+    cumulativeTry: 0, cumulativeUsd: 0
   }));
   
   // PLANNED OUTFLOW: from budget + program
@@ -3337,57 +3692,67 @@ function computeCashflow() {
     itemMonths.forEach((m, i) => {
       const row = data.find(d => d.month === m);
       if (row) {
+        row.planUsd += dist[i];
         row.planTry += dist[i] * row.fx;
       }
     });
   });
   
-  // ACTUAL OUTFLOW: from invoices by due date (KDV dahil)
+  // ACTUAL OUTFLOW: faturalar vade tarihine göre
   state.invoices.forEach(inv => {
     const dueM = (inv.dueDate || inv.date || '').substring(0, 7);
     const row = data.find(d => d.month === dueM);
     if (row) {
-      row.actualTry += calcInvoiceTotals(inv).grandTotal;
+      const c = calcInvoiceTotals(inv);
+      row.actualTry += c.grandTotal;
+      const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : row.fx;
+      row.actualUsd += c.grandTotal / invFx;
     }
   });
   
-  // INFLOW PLAN: by due date
-  // INFLOW ACTUAL: by actual date (if exists)
+  // INFLOW
   state.collections.forEach(c => {
     if (c.dueDate && c.planAmount) {
       const m = c.dueDate.substring(0, 7);
       const row = data.find(d => d.month === m);
-      if (row) row.collectionPlanTry += c.planAmount;
+      if (row) {
+        row.collectionPlanTry += c.planAmount;
+        row.collectionPlanUsd += c.planAmount / row.fx;
+      }
     }
     if (c.actualDate && c.actualAmount) {
       const m = c.actualDate.substring(0, 7);
       const row = data.find(d => d.month === m);
-      if (row) row.collectionActualTry += c.actualAmount;
+      if (row) {
+        row.collectionActualTry += c.actualAmount;
+        row.collectionActualUsd += c.actualAmount / row.fx;
+      }
     }
   });
   
   // CUMULATIVE
-  // Past months → use actual flows; future months → use plan flows
-  let cum = 0;
-  let cumUsd = 0;
+  let cumTry = 0, cumUsd = 0;
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   data.forEach(row => {
     const isPast = row.month < todayKey;
-    let outflow, inflow;
+    let outflowTry, inflowTry, outflowUsd, inflowUsd;
     if (isPast) {
-      // Geçmiş: vadesi geçmiş faturalar = harcandı varsayılır; planı aşan kısımları da say
-      outflow = Math.max(row.actualTry, row.planTry);
-      inflow = row.collectionActualTry; // Gerçekleşmemiş plan geçmiş ayda gelir sayılmaz
+      outflowTry = Math.max(row.actualTry, row.planTry);
+      inflowTry = row.collectionActualTry;
+      outflowUsd = Math.max(row.actualUsd, row.planUsd);
+      inflowUsd = row.collectionActualUsd;
     } else {
-      // Gelecek: plan
-      outflow = row.planTry;
-      inflow = row.collectionPlanTry;
+      outflowTry = row.planTry;
+      inflowTry = row.collectionPlanTry;
+      outflowUsd = row.planUsd;
+      inflowUsd = row.collectionPlanUsd;
     }
-    row.netTry = inflow - outflow;
-    cum += row.netTry;
-    cumUsd += row.netTry / row.fx;
-    row.cumulativeTry = cum;
+    row.netTry = inflowTry - outflowTry;
+    row.netUsd = inflowUsd - outflowUsd;
+    cumTry += row.netTry;
+    cumUsd += row.netUsd;
+    row.cumulativeTry = cumTry;
     row.cumulativeUsd = cumUsd;
   });
   
@@ -3398,23 +3763,118 @@ function renderCashflowTable() {
   const tbody = document.getElementById('cashflowTableBody');
   tbody.innerHTML = '';
   const cf = computeCashflow();
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   
   cf.forEach(row => {
+    const isPast = row.month < todayKey;
+    const isCurrent = row.month === todayKey;
+    const cumTryStyle = row.cumulativeTry < 0 ? 'color: var(--danger); font-weight: 600;' : 'color: var(--success); font-weight: 600;';
+    const cumUsdStyle = row.cumulativeUsd < 0 ? 'color: var(--danger); font-weight: 600;' : 'color: var(--success); font-weight: 600;';
+    const netTryStyle = row.netTry < 0 ? 'color: var(--danger);' : 'color: var(--success);';
+    const netUsdStyle = row.netUsd < 0 ? 'color: var(--danger);' : 'color: var(--success);';
+    const rowStyle = isCurrent ? 'background: rgba(184,134,61,0.08);' : (isPast ? 'opacity: 0.8;' : '');
     const tr = document.createElement('tr');
-    const cumStyle = row.cumulativeTry < 0 ? 'color: var(--danger); font-weight: 600;' : '';
+    if (rowStyle) tr.setAttribute('style', rowStyle);
     tr.innerHTML = `
-      <td class="center mono">${fmtMonth(row.month)}</td>
-      <td class="center">${fmtNum(row.fx)}</td>
-      <td class="right">${fmtTL(row.planTry)}</td>
-      <td class="right">${fmtTL(row.actualTry)}</td>
-      <td class="right" style="color: var(--text-muted);">${fmtTL(row.collectionPlanTry)}</td>
-      <td class="right" style="color: var(--success);">${fmtTL(row.collectionActualTry)}</td>
-      <td class="right">${fmtTL(row.netTry)}</td>
-      <td class="right" style="${cumStyle}">${fmtTL(row.cumulativeTry)}</td>
-      <td class="right" style="${cumStyle}">${fmtUSD(row.cumulativeUsd)}</td>
+      <td class="center mono">${fmtMonth(row.month)}${isCurrent ? ' <span style="font-size:9px;background:var(--accent);color:white;padding:1px 4px;border-radius:3px;">Bugün</span>' : ''}</td>
+      <td class="center">${fmtNum(row.fx, 2)}</td>
+      <td class="right">${row.planTry ? fmtTL(row.planTry) : '—'}</td>
+      <td class="right" style="color: var(--accent);">${row.planUsd ? fmtUSD(row.planUsd) : '—'}</td>
+      <td class="right">${row.actualTry ? fmtTL(row.actualTry) : '—'}</td>
+      <td class="right" style="color: var(--accent);">${row.actualUsd ? fmtUSD(row.actualUsd) : '—'}</td>
+      <td class="right" style="color: var(--text-muted);">${row.collectionPlanTry ? fmtTL(row.collectionPlanTry) : '—'}</td>
+      <td class="right" style="color: var(--text-muted);">${row.collectionPlanUsd ? fmtUSD(row.collectionPlanUsd) : '—'}</td>
+      <td class="right" style="color: var(--success);">${row.collectionActualTry ? fmtTL(row.collectionActualTry) : '—'}</td>
+      <td class="right" style="color: var(--success);">${row.collectionActualUsd ? fmtUSD(row.collectionActualUsd) : '—'}</td>
+      <td class="right" style="${netTryStyle}">${fmtTL(row.netTry)}</td>
+      <td class="right" style="${netUsdStyle}">${fmtUSD(row.netUsd)}</td>
+      <td class="right" style="${cumTryStyle}">${fmtTL(row.cumulativeTry)}</td>
+      <td class="right" style="${cumUsdStyle}">${fmtUSD(row.cumulativeUsd)}</td>
     `;
     tbody.appendChild(tr);
   });
+  
+  // Toplam satırı
+  if (cf.length > 0) {
+    const last = cf[cf.length - 1];
+    const totals = cf.reduce((acc, r) => ({
+      planTry: acc.planTry + r.planTry,
+      planUsd: acc.planUsd + r.planUsd,
+      actualTry: acc.actualTry + r.actualTry,
+      actualUsd: acc.actualUsd + r.actualUsd,
+      collectionPlanTry: acc.collectionPlanTry + r.collectionPlanTry,
+      collectionPlanUsd: acc.collectionPlanUsd + r.collectionPlanUsd,
+      collectionActualTry: acc.collectionActualTry + r.collectionActualTry,
+      collectionActualUsd: acc.collectionActualUsd + r.collectionActualUsd,
+    }), { planTry: 0, planUsd: 0, actualTry: 0, actualUsd: 0, collectionPlanTry: 0, collectionPlanUsd: 0, collectionActualTry: 0, collectionActualUsd: 0 });
+    
+    const tr = document.createElement('tr');
+    tr.style.fontWeight = '700';
+    tr.style.borderTop = '2px solid var(--border-strong)';
+    tr.innerHTML = `
+      <td class="center" colspan="2">TOPLAM / PROJE SONU</td>
+      <td class="right">${fmtTL(totals.planTry)}</td>
+      <td class="right" style="color: var(--accent);">${fmtUSD(totals.planUsd)}</td>
+      <td class="right">${fmtTL(totals.actualTry)}</td>
+      <td class="right" style="color: var(--accent);">${fmtUSD(totals.actualUsd)}</td>
+      <td class="right">${fmtTL(totals.collectionPlanTry)}</td>
+      <td class="right" style="color: var(--accent);">${fmtUSD(totals.collectionPlanUsd)}</td>
+      <td class="right">${fmtTL(totals.collectionActualTry)}</td>
+      <td class="right" style="color: var(--accent);">${fmtUSD(totals.collectionActualUsd)}</td>
+      <td class="right" style="${last.cumulativeTry < 0 ? 'color:var(--danger)' : 'color:var(--success)'};">${fmtTL(last.netTry)}</td>
+      <td class="right" style="${last.cumulativeUsd < 0 ? 'color:var(--danger)' : 'color:var(--success)'};">${fmtUSD(last.netUsd)}</td>
+      <td class="right" style="${last.cumulativeTry < 0 ? 'color:var(--danger);font-weight:700' : 'color:var(--success);font-weight:700'};">${fmtTL(last.cumulativeTry)}</td>
+      <td class="right" style="${last.cumulativeUsd < 0 ? 'color:var(--danger);font-weight:700' : 'color:var(--success);font-weight:700'};">${fmtUSD(last.cumulativeUsd)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  // === USD Nakit Akış Özet Tablosu ===
+  const tbodyUsd = document.getElementById('cashflowUsdTableBody');
+  if (tbodyUsd) {
+    tbodyUsd.innerHTML = '';
+    const today2 = new Date();
+    const todayKey2 = `${today2.getFullYear()}-${String(today2.getMonth() + 1).padStart(2, '0')}`;
+    cf.forEach(row => {
+      const isCurrent = row.month === todayKey2;
+      const cumUsdStyle = row.cumulativeUsd < 0 ? 'color:var(--danger);font-weight:600;' : 'color:var(--success);font-weight:600;';
+      const netUsdStyle = row.netUsd < 0 ? 'color:var(--danger);' : 'color:var(--success);';
+      const tr = document.createElement('tr');
+      if (isCurrent) tr.style.background = 'rgba(184,134,61,0.08)';
+      tr.innerHTML = `
+        <td class="center mono">${fmtMonth(row.month)}${isCurrent ? ' <span style="font-size:9px;background:var(--accent);color:white;padding:1px 4px;border-radius:3px;">Bugün</span>' : ''}</td>
+        <td class="right">${row.planUsd ? fmtUSD(row.planUsd) : '—'}</td>
+        <td class="right" style="color:#2f6b48;">${row.actualUsd ? fmtUSD(row.actualUsd) : '—'}</td>
+        <td class="right" style="color:var(--text-muted);">${row.collectionPlanUsd ? fmtUSD(row.collectionPlanUsd) : '—'}</td>
+        <td class="right" style="color:#2f6b48;">${row.collectionActualUsd ? fmtUSD(row.collectionActualUsd) : '—'}</td>
+        <td class="right" style="${netUsdStyle}">${fmtUSD(row.netUsd)}</td>
+        <td class="right" style="${cumUsdStyle}">${fmtUSD(row.cumulativeUsd)}</td>
+      `;
+      tbodyUsd.appendChild(tr);
+    });
+    if (cf.length > 0) {
+      const last = cf[cf.length - 1];
+      const totUsd = cf.reduce((acc, r) => ({
+        planUsd: acc.planUsd + r.planUsd,
+        actualUsd: acc.actualUsd + r.actualUsd,
+        collectionPlanUsd: acc.collectionPlanUsd + r.collectionPlanUsd,
+        collectionActualUsd: acc.collectionActualUsd + r.collectionActualUsd
+      }), { planUsd: 0, actualUsd: 0, collectionPlanUsd: 0, collectionActualUsd: 0 });
+      const tr = document.createElement('tr');
+      tr.style.cssText = 'font-weight:700;border-top:2px solid var(--border-strong);background:var(--surface-2);';
+      tr.innerHTML = `
+        <td class="center">TOPLAM / PROJE SONU</td>
+        <td class="right">${fmtUSD(totUsd.planUsd)}</td>
+        <td class="right" style="color:#2f6b48;">${fmtUSD(totUsd.actualUsd)}</td>
+        <td class="right">${fmtUSD(totUsd.collectionPlanUsd)}</td>
+        <td class="right" style="color:#2f6b48;">${fmtUSD(totUsd.collectionActualUsd)}</td>
+        <td class="right" style="${last.cumulativeUsd < 0 ? 'color:var(--danger)' : 'color:var(--success)'};">${fmtUSD(last.netUsd)}</td>
+        <td class="right" style="${last.cumulativeUsd < 0 ? 'color:var(--danger);font-weight:700' : 'color:var(--success);font-weight:700'};">${fmtUSD(last.cumulativeUsd)}</td>
+      `;
+      tbodyUsd.appendChild(tr);
+    }
+  }
 }
 
 function renderSettings() {
@@ -3669,6 +4129,8 @@ function openBudgetModal() {
   document.getElementById('bm-qty').value = '';
   document.getElementById('bm-unit').value = '';
   document.getElementById('bm-unitPrice').value = '';
+  document.getElementById('bm-currency').value = 'USD';
+  setBudgetModalLeafState(true); // yeni eklenen kalem her zaman leaf başlar
   document.getElementById('budgetModal').classList.add('active');
 }
 function closeBudgetModal() {
@@ -3686,23 +4148,76 @@ function editBudgetItem(id) {
   document.getElementById('bm-name').value = b.name;
   document.getElementById('bm-supplier').value = b.supplier;
   document.getElementById('bm-materialType').value = b.materialType || '';
-  document.getElementById('bm-qty').value = b.qty;
+  document.getElementById('bm-qty').value = b.qty || '';
   document.getElementById('bm-unit').value = b.unit;
-  document.getElementById('bm-unitPrice').value = b.unitPrice;
+  document.getElementById('bm-unitPrice').value = b.unitPrice || '';
+  document.getElementById('bm-currency').value = b.currency || 'USD';
+  // Eğer kalemin alt kalemleri varsa miktar/fiyat alanlarını disable et
+  setBudgetModalLeafState(isBudgetLeaf(b));
   document.getElementById('budgetModal').classList.add('active');
 }
+
+// Miktar/birim/fiyat alanlarını ana kategoriler için disable et
+function setBudgetModalLeafState(isLeaf) {
+  const fields = ['bm-qty', 'bm-unit', 'bm-unitPrice', 'bm-currency'];
+  fields.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = !isLeaf;
+    el.style.opacity = isLeaf ? '1' : '0.35';
+    el.style.cursor = isLeaf ? '' : 'not-allowed';
+  });
+  
+  // Uyarı bloğu — mevcut değilse oluştur, varsa güncelle
+  let warningEl = document.getElementById('bm-leaf-warning');
+  if (!warningEl) {
+    warningEl = document.createElement('div');
+    warningEl.id = 'bm-leaf-warning';
+    warningEl.style.cssText = 'margin-bottom: 12px; padding: 10px 14px; border-radius: 6px; font-size: 12px;';
+    const formRows = document.querySelectorAll('#budgetModal .form-row');
+    // Son form-row'dan sonrasına ekle (miktar/birim/fiyat rowundan sonra)
+    const targetRow = formRows[formRows.length - 1];
+    if (targetRow && targetRow.parentNode) {
+      targetRow.parentNode.insertBefore(warningEl, targetRow.nextSibling);
+    }
+  }
+  
+  if (isLeaf) {
+    warningEl.style.display = 'none';
+  } else {
+    warningEl.style.display = 'block';
+    warningEl.style.background = 'rgba(184, 134, 61, 0.12)';
+    warningEl.style.border = '1px solid rgba(184, 134, 61, 0.4)';
+    warningEl.style.color = '#7a5a1a';
+    warningEl.innerHTML = '⚠ <strong>Bu bir ana kategori</strong> — alt kalemleri var. Miktar ve birim fiyat girilemez; toplam otomatik olarak tüm alt kalemlerden hesaplanır.';
+  }
+}
+
 async function saveBudgetItem() {
   const mt = document.getElementById('bm-materialType').value;
+  const code = document.getElementById('bm-code').value.trim();
+  
+  // Bu kod ile bir kalem zaten var mı kontrol et (alt kalemli mi)
+  // Yeni eklenen kalem ise sonradan alt kalem eklenince otomatik ana olur
+  // Düzenleme ise mevcut state'e bakarak ayırt et
+  let isCurrentlyLeaf = true;
+  if (editingBudgetId) {
+    const existing = state.budget.find(x => x.id === editingBudgetId);
+    if (existing) isCurrentlyLeaf = isBudgetLeaf(existing);
+  }
+  
   const item = {
     id: editingBudgetId || ('b_' + Date.now()),
-    code: document.getElementById('bm-code').value.trim(),
+    code,
     level: parseInt(document.getElementById('bm-level').value),
     name: document.getElementById('bm-name').value.trim(),
     supplier: document.getElementById('bm-supplier').value.trim(),
     materialType: mt || null,
-    qty: parseFloat(document.getElementById('bm-qty').value) || 0,
-    unit: document.getElementById('bm-unit').value.trim(),
-    unitPrice: parseFloat(document.getElementById('bm-unitPrice').value) || 0
+    // Ana kategori ise miktar/fiyat 0 olarak kaydet (alt kalemlerden hesaplanır)
+    qty: isCurrentlyLeaf ? (parseFloat(document.getElementById('bm-qty').value) || 0) : 0,
+    unit: isCurrentlyLeaf ? document.getElementById('bm-unit').value.trim() : '',
+    unitPrice: isCurrentlyLeaf ? (parseFloat(document.getElementById('bm-unitPrice').value) || 0) : 0,
+    currency: document.getElementById('bm-currency').value || 'USD'
   };
   if (!item.code || !item.name) { alert('Kod ve kalem adı zorunlu'); return; }
   if (editingBudgetId) {
@@ -5260,6 +5775,14 @@ function exportXlsx() {
   const overall = computeOverallProgress();
   const cats = computeCategoryBreakdown();
   
+  // Yardımcı: header stili (bold yapılamıyor SheetJS free'de ama kolon genişlikleri, freeze, numFmt ayarlanabilir)
+  function applyNumberFormat(ws, col, startRow, endRow, fmt) {
+    for (let r = startRow; r <= endRow; r++) {
+      const addr = col + r;
+      if (ws[addr]) ws[addr].z = fmt;
+    }
+  }
+  
   // ====== 1) BÜTÇE ======
   const budgetHeader = ['Kod', 'Seviye', 'Kalem', 'Tedarikçi', 'Tip', 'Miktar', 'Birim', 'B.Fiyat USD', 'Toplam USD', 'Toplam TL', 'ID'];
   const sortedBudget = [...state.budget].sort((a, b) => a.code.localeCompare(b.code));
@@ -5269,85 +5792,135 @@ function exportXlsx() {
       b.code, b.level, b.name, b.supplier || '',
       getCategoryLabel(b.materialType),
       b.qty || 0, b.unit || '', b.unitPrice || 0,
-      null, // Formül ile dolacak
-      null, // Formül ile dolacak
-      b.id
+      null, null, b.id
     ]);
   });
   const budgetWs = XLSX.utils.aoa_to_sheet(budgetData);
-  // I sütunu = Toplam USD = F (miktar) * H (birim fiyat); J = I * fx
   for (let i = 2; i <= budgetData.length; i++) {
     budgetWs[`I${i}`] = { t: 'n', f: `F${i}*H${i}` };
     budgetWs[`J${i}`] = { t: 'n', f: `I${i}*${fx}` };
   }
-  // Toplam satırı
-  const totalRow = budgetData.length + 1;
-  budgetWs[`A${totalRow}`] = { t: 's', v: 'TOPLAM' };
-  budgetWs[`I${totalRow}`] = { t: 'n', f: `SUM(I2:I${budgetData.length})` };
-  budgetWs[`J${totalRow}`] = { t: 'n', f: `SUM(J2:J${budgetData.length})` };
-  budgetWs['!ref'] = `A1:K${totalRow}`;
-  budgetWs['!cols'] = [{ wch: 14 }, { wch: 7 }, { wch: 30 }, { wch: 18 }, { wch: 14 }, { wch: 10 }, { wch: 8 }, { wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 16 }];
+  const bTotalRow = budgetData.length + 1;
+  budgetWs[`A${bTotalRow}`] = { t: 's', v: 'TOPLAM' };
+  budgetWs[`I${bTotalRow}`] = { t: 'n', f: `SUM(I2:I${budgetData.length})` };
+  budgetWs[`J${bTotalRow}`] = { t: 'n', f: `SUM(J2:J${budgetData.length})` };
+  budgetWs['!ref'] = `A1:K${bTotalRow}`;
+  budgetWs['!cols'] = [{ wch: 14 }, { wch: 7 }, { wch: 32 }, { wch: 20 }, { wch: 14 }, { wch: 10 }, { wch: 8 }, { wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 16 }];
+  budgetWs['!autofilter'] = { ref: `A1:K1` };
   XLSX.utils.book_append_sheet(wb, budgetWs, 'Bütçe');
   
-  // ====== 2) FATURALAR ======
-  const invHeader = ['Tarih', 'Vade', 'Tedarikçi', 'Kod', 'Tip', 'Açıklama', 'KDV Hariç TL', 'KDV %', 'KDV Dahil TL', 'USD Kuru', 'Durum', 'Ödeme Tarihi', 'ID'];
+  // ====== 2) FATURALAR (yeni yapı) ======
+  const invHeader = ['Fatura No', 'Cari Adı', 'F.Tarihi', 'Vade', 'Hesap Kodu', 'Tip', 'Açıklama',
+    'Net Tutar TL', 'KDV 1 %', 'KDV 1 TL', 'KDV 2 %', 'KDV 2 TL', 'KDV 3 %', 'KDV 3 TL', 'KDV 4 %', 'KDV 4 TL',
+    'KDV Toplam', 'Stopaj %', 'Stopaj TL', 'Tevkifat %', 'Tevkifat TL', 'Genel Toplam',
+    'Taksit', 'Ödenen', 'Kalan', 'USD Kuru', 'Durum', 'ID'];
   const invData = [invHeader];
   const sortedInv = [...state.invoices].sort((a, b) => new Date(b.date) - new Date(a.date));
-  sortedInv.forEach(i => {
-    invData.push([
-      i.date, i.dueDate, i.supplier, i.code,
-      getCategoryLabel(i.type),
-      i.desc || '',
-      i.amount || 0, (i.vat || 0) * 100,
-      null, // formül
-      i.fxRate || 0,
-      i.status === 'paid' ? 'Ödendi' : 'Bekliyor', i.paidDate || '',
-      i.id
-    ]);
+  sortedInv.forEach(inv => {
+    const c = calcInvoiceTotals(inv);
+    const kdv = c.kdvRows || [];
+    const row = [
+      inv.invoiceNo || '', inv.supplier || '', inv.date || '', inv.dueDate || '',
+      inv.code || '', getCategoryLabel(inv.type), inv.desc || '',
+      c.net,
+      kdv[0] ? kdv[0].rate : '', kdv[0] ? kdv[0].amount : '',
+      kdv[1] ? kdv[1].rate : '', kdv[1] ? kdv[1].amount : '',
+      kdv[2] ? kdv[2].rate : '', kdv[2] ? kdv[2].amount : '',
+      kdv[3] ? kdv[3].rate : '', kdv[3] ? kdv[3].amount : '',
+      null, // KDV Toplam formül
+      c.stopajRate, null, // Stopaj TL formül
+      c.tevkifatRate, null, // Tevkifat TL formül
+      null, // Genel Toplam formül
+      c.installments.length, c.totalPaid, c.remaining,
+      inv.fxRate || '',
+      c.overallStatus === 'paid' ? 'Ödendi' : (c.overallStatus === 'partial' ? 'Kısmi' : 'Bekliyor'),
+      inv.id
+    ];
+    invData.push(row);
   });
   const invWs = XLSX.utils.aoa_to_sheet(invData);
-  // I = G * (1 + H/100)
+  // Formüller: Q = KDV Toplam = J+L+N+P, S = Stopaj TL = H*(R/100), U = Tevkifat TL = Q*(T/100), V = G.Toplam = H+Q-S-U
   for (let i = 2; i <= invData.length; i++) {
-    invWs[`I${i}`] = { t: 'n', f: `G${i}*(1+H${i}/100)` };
+    invWs[`Q${i}`] = { t: 'n', f: `J${i}+L${i}+N${i}+P${i}` };
+    invWs[`S${i}`] = { t: 'n', f: `H${i}*(R${i}/100)` };
+    invWs[`U${i}`] = { t: 'n', f: `Q${i}*(T${i}/100)` };
+    invWs[`V${i}`] = { t: 'n', f: `H${i}+Q${i}-S${i}-U${i}` };
   }
-  const invTotalRow = invData.length + 1;
-  invWs[`A${invTotalRow}`] = { t: 's', v: 'TOPLAM' };
-  invWs[`G${invTotalRow}`] = { t: 'n', f: `SUM(G2:G${invData.length})` };
-  invWs[`I${invTotalRow}`] = { t: 'n', f: `SUM(I2:I${invData.length})` };
-  invWs['!ref'] = `A1:M${invTotalRow}`;
-  invWs['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 28 }, { wch: 14 }, { wch: 8 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 18 }];
+  // Toplam satırı
+  const iTotalRow = invData.length + 1;
+  invWs[`A${iTotalRow}`] = { t: 's', v: 'TOPLAM' };
+  ['H', 'J', 'L', 'N', 'P', 'Q', 'S', 'U', 'V', 'X', 'Y'].forEach(col => {
+    invWs[`${col}${iTotalRow}`] = { t: 'n', f: `SUM(${col}2:${col}${invData.length})` };
+  });
+  invWs['!ref'] = `A1:AB${iTotalRow}`;
+  invWs['!cols'] = [
+    { wch: 14 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 28 },
+    { wch: 14 }, { wch: 7 }, { wch: 12 }, { wch: 7 }, { wch: 12 }, { wch: 7 }, { wch: 12 }, { wch: 7 }, { wch: 12 },
+    { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 16 },
+    { wch: 7 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 16 }
+  ];
+  invWs['!autofilter'] = { ref: `A1:AB1` };
   XLSX.utils.book_append_sheet(wb, invWs, 'Faturalar');
   
-  // ====== 3) KESİNTİLER ======
-  const cols = state.settings.deductionColumns;
-  const dHeader = ['Tedarikçi', 'Kod', 'Açıklama', ...cols.map(c => c.label), 'Toplam'];
+  // ====== 3) ÖDEME PLANI (taksit detayları) ======
+  const payHeader = ['Fatura No', 'Cari Adı', 'Taksit #', 'Vade Tarihi', 'Taksit Tutarı', 'Ödenen', 'Kalan', 'Ödeme Tarihi', 'Durum'];
+  const payData = [payHeader];
+  sortedInv.forEach(inv => {
+    const c = calcInvoiceTotals(inv);
+    c.installments.forEach((inst, idx) => {
+      const remaining = (inst.amount || 0) - (inst.paidAmount || 0);
+      payData.push([
+        inv.invoiceNo || inv.id, inv.supplier || '',
+        idx + 1, inst.dueDate || '', inst.amount || 0,
+        inst.paidAmount || 0, null, // Kalan formül
+        inst.paidDate || '',
+        inst.status === 'paid' ? 'Ödendi' : 'Bekliyor'
+      ]);
+    });
+  });
+  const payWs = XLSX.utils.aoa_to_sheet(payData);
+  for (let i = 2; i <= payData.length; i++) {
+    payWs[`G${i}`] = { t: 'n', f: `E${i}-F${i}` };
+  }
+  const pTotalRow = payData.length + 1;
+  payWs[`A${pTotalRow}`] = { t: 's', v: 'TOPLAM' };
+  payWs[`E${pTotalRow}`] = { t: 'n', f: `SUM(E2:E${payData.length})` };
+  payWs[`F${pTotalRow}`] = { t: 'n', f: `SUM(F2:F${payData.length})` };
+  payWs[`G${pTotalRow}`] = { t: 'n', f: `SUM(G2:G${payData.length})` };
+  payWs['!ref'] = `A1:I${pTotalRow}`;
+  payWs['!cols'] = [{ wch: 16 }, { wch: 22 }, { wch: 8 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 10 }];
+  payWs['!autofilter'] = { ref: `A1:I1` };
+  XLSX.utils.book_append_sheet(wb, payWs, 'Ödeme Planı');
+  
+  // ====== 4) KESİNTİLER ======
+  const dCols = state.settings.deductionColumns;
+  const dHeader = ['Tedarikçi', 'Kod', 'Açıklama', ...dCols.map(c => c.label), 'Toplam'];
   const dData = [dHeader];
   state.deductions.forEach(d => {
-    const colVals = cols.map(c => (d.columns && d.columns[c.key]) || 0);
+    const colVals = dCols.map(c => (d.columns && d.columns[c.key]) || 0);
     dData.push([d.supplier, d.code || '', d.desc || '', ...colVals, null]);
   });
   const dWs = XLSX.utils.aoa_to_sheet(dData);
-  const totalColLetter = XLSX.utils.encode_col(3 + cols.length); // D + cols
-  const colStartLetter = 'D';
-  const colEndLetter = XLSX.utils.encode_col(2 + cols.length);
+  const dTotalColLetter = XLSX.utils.encode_col(3 + dCols.length);
+  const dColStartLetter = 'D';
+  const dColEndLetter = XLSX.utils.encode_col(2 + dCols.length);
   for (let i = 2; i <= dData.length; i++) {
-    dWs[`${totalColLetter}${i}`] = { t: 'n', f: `SUM(${colStartLetter}${i}:${colEndLetter}${i})` };
+    dWs[`${dTotalColLetter}${i}`] = { t: 'n', f: `SUM(${dColStartLetter}${i}:${dColEndLetter}${i})` };
   }
-  // Toplam satırı
   if (state.deductions.length > 0) {
     const dTotalRow = dData.length + 1;
     dWs[`A${dTotalRow}`] = { t: 's', v: 'TOPLAM' };
-    for (let c = 0; c < cols.length; c++) {
+    for (let c = 0; c < dCols.length; c++) {
       const col = XLSX.utils.encode_col(3 + c);
       dWs[`${col}${dTotalRow}`] = { t: 'n', f: `SUM(${col}2:${col}${dData.length})` };
     }
-    dWs[`${totalColLetter}${dTotalRow}`] = { t: 'n', f: `SUM(${totalColLetter}2:${totalColLetter}${dData.length})` };
-    dWs['!ref'] = `A1:${totalColLetter}${dTotalRow}`;
+    dWs[`${dTotalColLetter}${dTotalRow}`] = { t: 'n', f: `SUM(${dTotalColLetter}2:${dTotalColLetter}${dData.length})` };
+    dWs['!ref'] = `A1:${dTotalColLetter}${dTotalRow}`;
   }
-  dWs['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 24 }, ...cols.map(() => ({ wch: 14 })), { wch: 14 }];
+  dWs['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 26 }, ...dCols.map(() => ({ wch: 14 })), { wch: 14 }];
   XLSX.utils.book_append_sheet(wb, dWs, 'Kesintiler');
   
-  // ====== 4) TAHSİLAT ======
+  // ====== 5) TAHSİLAT ======
   const cHeader = ['Vade', 'Müşteri', 'Sözleşme Tar.', 'Açıklama', 'Plan TL', 'Gerç. Tar.', 'Gerç. TL', 'Durum'];
   const cData = [cHeader, ...state.collections.map(c => [
     c.dueDate, c.customer || '', c.contractDate || '', c.desc || '',
@@ -5365,28 +5938,23 @@ function exportXlsx() {
   cWs['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(wb, cWs, 'Tahsilat');
   
-  // ====== 5) NAKİT AKIŞ ======
+  // ====== 6) NAKİT AKIŞ ======
   const cf = computeCashflow();
   const cfHeader = ['Ay', 'USD/TRY', 'Plan Harcama TL', 'Gerç. Harcama TL', 'Plan Tahsilat TL', 'Gerç. Tahsilat TL', 'Net TL', 'Kümülatif TL', 'Kümülatif USD'];
   const cfData = [cfHeader];
-  cf.forEach((r, idx) => {
+  cf.forEach(r => {
     cfData.push([r.month, r.fx, r.planTry, r.actualTry, r.collectionPlanTry, r.collectionActualTry, null, null, null]);
   });
   const cfWs = XLSX.utils.aoa_to_sheet(cfData);
-  // Net = (E+F) - (C+D) gerçek bazlı; Kümülatif = önceki + net
   for (let i = 2; i <= cfData.length; i++) {
     cfWs[`G${i}`] = { t: 'n', f: `F${i}-D${i}` };
-    if (i === 2) {
-      cfWs[`H${i}`] = { t: 'n', f: `G${i}` };
-    } else {
-      cfWs[`H${i}`] = { t: 'n', f: `H${i-1}+G${i}` };
-    }
+    cfWs[`H${i}`] = { t: 'n', f: i === 2 ? `G${i}` : `H${i-1}+G${i}` };
     cfWs[`I${i}`] = { t: 'n', f: `H${i}/B${i}` };
   }
   cfWs['!cols'] = [{ wch: 10 }, { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 18 }, { wch: 18 }];
   XLSX.utils.book_append_sheet(wb, cfWs, 'Nakit Akış');
   
-  // ====== 6) İŞ PROGRAMI ======
+  // ====== 7) İŞ PROGRAMI ======
   const progHeader = ['Kod', 'Kalem', 'Başlangıç', 'Bitiş', 'Süre (Ay)', 'Eğri', 'Toplam USD', 'ID'];
   const progData = [progHeader];
   getLeafBudgetItems().sort((a,b) => a.code.localeCompare(b.code)).forEach(b => {
@@ -5395,30 +5963,31 @@ function exportXlsx() {
     progData.push([b.code, b.name, p.start || '', p.end || '', months, labelCurve(p.curve || ''), getBudgetItemTotalUsd(b), b.id]);
   });
   const progWs = XLSX.utils.aoa_to_sheet(progData);
-  progWs['!cols'] = [{ wch: 14 }, { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 18 }, { wch: 16 }, { wch: 18 }];
+  progWs['!cols'] = [{ wch: 14 }, { wch: 32 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 18 }, { wch: 16 }, { wch: 18 }];
   XLSX.utils.book_append_sheet(wb, progWs, 'İş Programı');
   
-  // ====== 7) ÖZET (en sona ekliyoruz ki bütçe formüllerini referans alabilsin) ======
+  // ====== 8) ÖZET ======
   const ozetData = [
-    ['ÖZET', '', '', ''],
+    ['PROJE ÖZET RAPORU', '', '', ''],
+    ['', '', '', ''],
     ['Proje Adı', state.settings.projectName || '—', '', ''],
     ['Dönem', `${state.settings.startMonth} – ${state.settings.endMonth}`, '', ''],
     ['İnşaat Alanı (m²)', state.settings.totalArea || 0, '', ''],
     ['Satılabilir Alan (m²)', state.settings.salableArea || 0, '', ''],
     ['USD/TRY (bugün)', fx, '', ''],
+    ['Rapor Tarihi', new Date().toLocaleDateString('tr-TR'), '', ''],
     ['', '', '', ''],
     ['ANA METRİKLER', 'USD', 'TL', ''],
-    ['Toplam Bütçe', overall.totalBudget, null, ''],
+    ['Toplam Bütçe', null, null, ''],
     ['Gerçekleşme', overall.totalActual, null, ''],
     ['Fiziksel İlerleme %', overall.physicalPct, '', ''],
     ['Finansal İlerleme %', overall.financialPct, '', ''],
     ['SPI', overall.spi, '', ''],
-    ['EAC (Tahmini Bitiş Maliyeti)', overall.eac, null, ''],
+    ['EAC (Tahmini Bitiş Maliyeti)', null, null, ''],
     ['Tahmini Bitiş Tarihi', overall.etaDate ? overall.etaDate.toLocaleDateString('tr-TR') : '—', '', ''],
     ['', '', '', ''],
     ['KATEGORİ KIRILIMI', 'Bütçe USD', 'Gerç. USD', '%'],
   ];
-  // Dinamik kategoriler
   Object.keys(cats).forEach(key => {
     const c = cats[key];
     if (c.budgetUsd === 0 && c.actualUsd === 0) return;
@@ -5442,22 +6011,22 @@ function exportXlsx() {
     ozetData.push(['Satılabilir m² / Arsa Dahil', overall.totalBudget / state.settings.salableArea, '', '']);
   }
   const ozetWs = XLSX.utils.aoa_to_sheet(ozetData);
-  // Bağlantılı formüller: Bütçe sayfasına link
-  const budgetTotalRow = sortedBudget.length + 2; // toplam satırının yeri
-  ozetWs['B9'] = { t: 'n', f: `Bütçe!I${budgetTotalRow}` };
-  ozetWs['C9'] = { t: 'n', f: `Bütçe!J${budgetTotalRow}` };
-  ozetWs['C10'] = { t: 'n', f: `B10*${fx}` };
-  ozetWs['B14'] = { t: 'n', f: `B9/B13` }; // EAC = Bütçe / SPI
-  ozetWs['C14'] = { t: 'n', f: `B14*${fx}` };
-  // % sütunu (kategori kırılımı)
-  for (let i = 0; i < Object.keys(cats).length; i++) {
-    const rowIdx = 18 + i; // 1-based, başlangıç row 18
-    const realCat = Object.values(cats)[i];
-    if (realCat && (realCat.budgetUsd > 0 || realCat.actualUsd > 0)) {
-      ozetWs[`D${rowIdx}`] = { t: 'n', f: `IFERROR(C${rowIdx}/B${rowIdx}*100, 0)` };
-    }
-  }
-  ozetWs['!cols'] = [{ wch: 32 }, { wch: 18 }, { wch: 18 }, { wch: 12 }];
+  // Bağlantılı formüller
+  const budgetTotalRow = sortedBudget.length + 2;
+  ozetWs['B11'] = { t: 'n', f: `Bütçe!I${budgetTotalRow}` };
+  ozetWs['C11'] = { t: 'n', f: `Bütçe!J${budgetTotalRow}` };
+  ozetWs['C12'] = { t: 'n', f: `B12*${fx}` };
+  ozetWs['B16'] = { t: 'n', f: `IFERROR(B11/B15, B11)` }; // EAC = Bütçe / SPI
+  ozetWs['C16'] = { t: 'n', f: `B16*${fx}` };
+  // Kategori % formülleri
+  let catStartRow = 20;
+  Object.keys(cats).forEach((key, i) => {
+    const c = cats[key];
+    if (c.budgetUsd === 0 && c.actualUsd === 0) return;
+    const rowIdx = catStartRow + i;
+    ozetWs[`D${rowIdx}`] = { t: 'n', f: `IFERROR(C${rowIdx}/B${rowIdx}*100, 0)` };
+  });
+  ozetWs['!cols'] = [{ wch: 34 }, { wch: 18 }, { wch: 18 }, { wch: 12 }];
   XLSX.utils.book_append_sheet(wb, ozetWs, 'Özet');
   
   // Save
