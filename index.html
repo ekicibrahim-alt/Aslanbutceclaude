@@ -5849,7 +5849,7 @@ function exportXlsx() {
   }
 
   // ============================================================
-  // SAYFA 1 — BÜTÇE (Gerçekleşme + Kalan dahil)
+  // SAYFA 1 — BÜTÇE (Hiyerarşik gruplandırma + doğru alt toplam formülleri)
   // ============================================================
   // Sütunlar: A=Kod B=Seviye C=Kalem D=Tedarikçi E=Tip F=Miktar G=Birim H=B.Fiyat I=Para
   //           J=Baz USD K=Baz TL  L=Revize USD  M=Gerçekleşme USD  N=Gerçekleşme TL
@@ -5862,54 +5862,111 @@ function exportXlsx() {
     'Durum','ID'
   ];
   const sortedBudget = [...state.budget].sort((a, b) => a.code.localeCompare(b.code));
+  
+  // Her kalem için Excel satır numarasını tut (formüllerde kullanmak için)
+  const codeToRow = {}; // code → excel row number (1-based, header=1)
+  sortedBudget.forEach((b, i) => { codeToRow[b.code] = i + 2; });
+  
   const budgetRows = [budgetHeader];
+  const rowMeta = []; // her veri satırı için {level, isLeaf, hasChildren, code}
+
   sortedBudget.forEach(b => {
-    const baseUsd = getBudgetItemTotalUsd(b);
-    const baseTry = getBudgetItemTotalTry(b);
-    const actUsd  = getBudgetItemActualUsd(b);
-    const actTry  = getBudgetItemActualTry(b);
-    const revUsd  = b.revisedBudgetUsd != null ? b.revisedBudgetUsd : null;
-    const effUsd  = revUsd != null ? revUsd : baseUsd;
-    const remUsd  = effUsd - actUsd;
-    const remTry  = (revUsd != null ? revUsd * fx : baseTry) - actTry;
-    let durum = actUsd > effUsd + 0.01 ? 'AŞIM' : (revUsd != null ? 'Revize' : (actUsd > 0 ? 'Normal' : ''));
+    const isLeaf = isBudgetLeaf(b);
+    const hasKids = hasChildren(b);
+    const revUsd = b.revisedBudgetUsd != null ? b.revisedBudgetUsd : null;
+    const actUsd = getBudgetItemActualUsd(b);
+    const actTry = getBudgetItemActualTry(b);
+    let durum = actUsd > (revUsd||getBudgetItemTotalUsd(b)) + 0.01 ? 'AŞIM' : (revUsd != null ? 'Revize' : (actUsd > 0 ? 'Normal' : ''));
+
     budgetRows.push([
       b.code, b.level, b.name, b.supplier || '',
       getCategoryLabel(b.materialType),
-      isBudgetLeaf(b) ? (b.qty || 0) : '', b.unit || '',
-      isBudgetLeaf(b) ? (b.unitPrice || 0) : '', b.currency || 'USD',
-      baseUsd, baseTry, revUsd != null ? revUsd : '',
-      actUsd || '', actTry || '',
-      remUsd, remTry,
+      isLeaf ? ((b.qty && b.qty > 0) ? b.qty : (b.unitPrice > 0 ? 1 : '')) : '',
+      b.unit || '',
+      isLeaf ? (b.unitPrice || 0) : '',
+      b.currency || 'USD',
+      null, null, // J=Baz USD, K=Baz TL — formül ile
+      revUsd != null ? revUsd : '',
+      actUsd > 0 ? actUsd : '', actTry > 0 ? actTry : '',
+      null, null, // O=Kalan USD, P=Kalan TL — formül ile
       durum, b.id
     ]);
+    rowMeta.push({ level: b.level, isLeaf, hasKids, code: b.code });
   });
-  // Toplam satırı
-  const bN = budgetRows.length; // son veri satırı indexi (1-based = bN)
+
+  const bN = budgetRows.length; // son veri satırı (1-based)
   const bTot = bN + 1;
   budgetRows.push(['TOPLAM','','','','','','','','',null,null,'',null,null,null,null,'','']);
+
   const budgetWs = XLSX.utils.aoa_to_sheet(budgetRows);
-  // Formüller — veri satırları 2..bN
+
+  // Formüller — her satır için
   for (let i = 2; i <= bN; i++) {
-    // Baz TL = Baz USD * fx (eğer değer girilmemişse)
-    if (!sortedBudget[i-2] || budgetWs[`J${i}`]) {
-      budgetWs[`K${i}`] = { t: 'n', f: `J${i}*${fx}` };
+    const meta = rowMeta[i - 2];
+    const b = sortedBudget[i - 2];
+
+    if (meta.isLeaf) {
+      // Yaprak kalem: J = F*H (miktar × birim fiyat)
+      budgetWs[`J${i}`] = { t: 'n', f: `IF(I${i}="TRY",(IF(F${i}="",1,F${i})*H${i})/${fx},IF(F${i}="",1,F${i})*H${i})` };
+      budgetWs[`K${i}`] = { t: 'n', f: `IF(I${i}="TRY",IF(F${i}="",1,F${i})*H${i},IF(F${i}="",1,F${i})*H${i}*${fx})` };
+    } else {
+      // Ana/ara kategori: J = alt kalemlerinin TOPLA'sı
+      // Alt kalem satır numaralarını bul
+      const childRows = sortedBudget
+        .map((cb, ci) => ({ b: cb, row: ci + 2 }))
+        .filter(({ b: cb }) => cb.code !== b.code && cb.code.startsWith(b.code + '.') && isBudgetLeaf(cb))
+        .map(({ row }) => row);
+      
+      if (childRows.length > 0) {
+        const jRefs = childRows.map(r => `J${r}`).join('+');
+        const kRefs = childRows.map(r => `K${r}`).join('+');
+        budgetWs[`J${i}`] = { t: 'n', f: jRefs };
+        budgetWs[`K${i}`] = { t: 'n', f: kRefs };
+      } else {
+        budgetWs[`J${i}`] = { t: 'n', v: 0 };
+        budgetWs[`K${i}`] = { t: 'n', v: 0 };
+      }
     }
-    // Kalan USD = Revize (L) varsa L-M, yoksa J-M
+
+    // Kalan = Revize (L) varsa L-M, yoksa J-M
     budgetWs[`O${i}`] = { t: 'n', f: `IF(L${i}<>"",L${i},J${i})-IF(M${i}="",0,M${i})` };
     budgetWs[`P${i}`] = { t: 'n', f: `IF(L${i}<>"",L${i}*${fx},K${i})-IF(N${i}="",0,N${i})` };
   }
-  // Toplam satırı formülleri
-  ['J','K','L','M','N','O','P'].forEach(col => {
-    budgetWs[`${col}${bTot}`] = { t: 'n', f: `SUM(${col}2:${col}${bN})` };
+
+  // Toplam satırı — sadece level 1 olanların toplamı (çift sayma önle)
+  const level1Rows = rowMeta.map((m,i) => m.level === 1 ? i+2 : null).filter(Boolean);
+  if (level1Rows.length > 0) {
+    const jSum = level1Rows.map(r => `J${r}`).join('+');
+    const kSum = level1Rows.map(r => `K${r}`).join('+');
+    budgetWs[`J${bTot}`] = { t: 'n', f: jSum };
+    budgetWs[`K${bTot}`] = { t: 'n', f: kSum };
+    ['L','M','N','O','P'].forEach(col => {
+      budgetWs[`${col}${bTot}`] = { t: 'n', f: `SUM(${col}2:${col}${bN})` };
+    });
+  } else {
+    ['J','K','L','M','N','O','P'].forEach(col => {
+      budgetWs[`${col}${bTot}`] = { t: 'n', f: `SUM(${col}2:${col}${bN})` };
+    });
+  }
+
+  // Excel satır outline gruplandırması (açılır/kapanır)
+  const rowsConfig = [];
+  rowsConfig.push({}); // header satırı (index 0, excel row 1)
+  rowMeta.forEach((meta, i) => {
+    // Excel outline level: level 1 = ana kategori (grup başı, level=0 olmalı)
+    // alt kalemler level=1, daha derin olanlar level=2 vs
+    const outlineLevel = Math.max(0, meta.level - 1);
+    rowsConfig.push({ level: outlineLevel });
   });
+  rowsConfig.push({}); // TOPLAM satırı
+  budgetWs['!rows'] = rowsConfig;
+
   budgetWs['!ref'] = `A1:R${bTot}`;
   budgetWs['!cols'] = [
-    {wch:14},{wch:6},{wch:32},{wch:20},{wch:12},{wch:8},{wch:7},{wch:12},{wch:5},
+    {wch:16},{wch:6},{wch:34},{wch:20},{wch:12},{wch:8},{wch:7},{wch:14},{wch:5},
     {wch:16},{wch:18},{wch:14},{wch:18},{wch:18},{wch:14},{wch:18},{wch:8},{wch:16}
   ];
-  budgetWs['!freeze'] = { xSplit: 0, ySplit: 1 }; // ilk satır dondur
-  budgetWs['!autofilter'] = { ref: 'A1:R1' };
+  budgetWs['!freeze'] = { xSplit: 3, ySplit: 1 }; // ilk 3 sütun + başlık dondur
   applyFmt(budgetWs, ['J','L','M','O'], 2, bTot, FMT_USD);
   applyFmt(budgetWs, ['K','N','P'], 2, bTot, FMT_TL);
   applyFmt(budgetWs, ['F','H'], 2, bN, FMT_NUM);
