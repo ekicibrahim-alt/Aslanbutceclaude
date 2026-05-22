@@ -3069,22 +3069,24 @@ function computeOverallProgress() {
     totalActualUsd += c.grandTotal / invFx;
   });
   
-  // Toplam bütçe TL (güncel kur ile)
-  const totalBudgetTry = totalBudget * fx;
+  // Toplam bütçe TL — ağırlıklı kur (her kalemin iş programına göre)
+  const totalBudgetTry = leaves.reduce((sum, b) => sum + getBudgetItemTotalTry(b), 0);
+  
+  // EAC TL — USD EAC'ı ağırlıklı ortalama kur ile TL'ye çevir
+  const avgFx = totalBudget > 0 ? totalBudgetTry / totalBudget : fx;
   
   // USD bazlı finansal ilerleme
   const financialPctUsd = totalBudget > 0 ? (totalActualUsd / totalBudget) * 100 : 0;
-  // TL bazlı finansal ilerleme
+  // TL bazlı finansal ilerleme (ağırlıklı bütçe TL ile karşılaştır)
   const financialPctTry = totalBudgetTry > 0 ? (totalActualTry / totalBudgetTry) * 100 : 0;
-  // Geriye uyumluluk için tek değer (USD bazlı)
   const financialPct = financialPctUsd;
   const totalActual = totalActualUsd;
   
-  // Fiziksel ilerleme — zaten USD bazlı (plan USD / bütçe USD)
   const physicalPct = totalBudget > 0 ? (totalPlanned / totalBudget) * 100 : 0;
   
   const spi = totalPlanned > 0 ? (totalActualUsd / totalPlanned) : null;
   const eac = (spi && spi > 0) ? (totalBudget / spi) : totalBudget;
+  const eacTry = eac * avgFx; // EAC TL = EAC USD × ağırlıklı ortalama kur
   
   // Proje bitiş tarihi tahmini
   let etaDate = null;
@@ -3110,7 +3112,7 @@ function computeOverallProgress() {
     totalActual, totalActualUsd, totalActualTry,
     physicalPct,
     financialPct, financialPctUsd, financialPctTry,
-    spi, eac, etaDate
+    spi, eac, eacTry, avgFx, etaDate
   };
 }
 
@@ -3336,7 +3338,7 @@ function renderKpis() {
   }
   
   // EAC ve ETA
-  document.getElementById('kpi-eac-try').textContent = fmtTL(overall.eac * fx);
+  document.getElementById('kpi-eac-try').textContent = fmtTL(overall.eacTry || overall.eac * fx);
   document.getElementById('kpi-eac-usd').textContent = fmtUSD(overall.eac);
   
   const eta = document.getElementById('kpi-eta');
