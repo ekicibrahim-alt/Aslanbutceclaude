@@ -1351,7 +1351,7 @@ body.view-mode .lock-status * {
   <div class="modal">
     <h3 class="modal-title" id="budgetModalTitle">Bütçe Kalemi Ekle</h3>
     <div class="form-row form-row-2">
-      <div class="form-field"><label>Hesap Kodu *</label><input type="text" id="bm-code" placeholder="ör. 150.02.02.01"></div>
+      <div class="form-field"><label>Hesap Kodu *</label><input type="text" id="bm-code" placeholder="ör. 150.02.02.01" oninput="onBudgetCodeOrLevelChange()"></div>
       <div class="form-field"><label>Seviye</label>
         <select id="bm-level" onchange="onBudgetLevelChange()">
           <option value="1">1 - Ana Kategori</option>
@@ -4334,9 +4334,16 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
 // Seviye değişince fiyat bölümü göster/gizle
 function onBudgetLevelChange() {
-  const level = parseInt(document.getElementById('bm-level').value);
-  const isParent = (level === 1);
-  _applyBudgetParentState(isParent);
+  onBudgetCodeOrLevelChange();
+}
+
+// Kod veya seviye değişince: bu kodun altında başka kalem var mı?
+function onBudgetCodeOrLevelChange() {
+  const code = (document.getElementById('bm-code').value || '').trim();
+  const hasKids = code
+    ? state.budget.some(b => b.id !== editingBudgetId && b.code.startsWith(code + '.'))
+    : false;
+  _applyBudgetParentState(hasKids);
 }
 
 function _applyBudgetParentState(isParent) {
@@ -4390,7 +4397,7 @@ function editBudgetItem(id) {
   document.getElementById('bm-unitPrice').value = b.unitPrice || '';
   document.getElementById('bm-currency').value = b.currency || 'USD';
   // Seviye 1-2 veya altında kalem varsa ana kategori
-  const isParent = b.level === 1 || !isBudgetLeaf(b);
+  const isParent = !isBudgetLeaf(b);
   _applyBudgetParentState(isParent);
   document.getElementById('budgetModal').classList.add('active');
 }
