@@ -1093,24 +1093,30 @@ body.view-mode .lock-status * {
 
     <div class="section">
       <div class="section-header">
-        <h2 class="section-title">🔒 Teminat Takibi</h2>
-        <span style="font-size:12px;color:var(--text-muted);">Birikmiş teminat ve iade planı</span>
+        <h2 class="section-title">🏦 Teminat Mektupları</h2>
+        <div class="section-actions">
+          <button class="btn btn-primary" onclick="openMektupModal()">+ Mektup Ekle</button>
+        </div>
       </div>
+      <div id="mektupUyariBar"></div>
       <div style="overflow-x:auto;">
-        <table class="data-table" id="teminatTable">
+        <table class="data-table">
           <thead>
             <tr>
               <th>Tedarikçi</th>
               <th>Hesap Kodu</th>
-              <th class="right">Nakit Teminat</th>
-              <th class="right">Kesin Teminat</th>
-              <th class="right">Toplam</th>
-              <th class="center">İade Tarihi</th>
-              <th class="center">İade Durumu</th>
+              <th>Banka</th>
+              <th>Mektup No</th>
+              <th class="right">Tutar</th>
+              <th class="center">Başlangıç</th>
+              <th class="center">Vade</th>
+              <th class="center">Kalan</th>
+              <th class="center">Durum</th>
+              <th>Notlar</th>
               <th class="center"></th>
             </tr>
           </thead>
-          <tbody id="teminatTableBody"></tbody>
+          <tbody id="mektupTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -1400,6 +1406,94 @@ body.view-mode .lock-status * {
     </div>
   </section>
 
+</div>
+
+<!-- TEMİNAT MEKTUBU REVİZE MODAL -->
+<div class="modal-overlay" id="mektupRevizeModal">
+  <div class="modal" style="width:440px;">
+    <h3 class="modal-title" id="mrm-title">Mektup Tutarını Revize Et</h3>
+    <div id="mrm-mevcut" style="padding:10px 14px;background:var(--surface-2);border-radius:8px;margin-bottom:14px;font-size:13px;"></div>
+    <div class="form-row form-row-2">
+      <div class="form-field">
+        <label>İşlem Türü</label>
+        <select id="mrm-tur" onchange="onRevizeTurChange()">
+          <option value="ekleme">➕ Ekleme (Tutar Artışı)</option>
+          <option value="dusüm">➖ Düşüm (Tutar Azalışı)</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>Tutar *</label>
+        <input type="text" id="mrm-tutar" placeholder="0,00" oninput="onRevizeTutarChange()">
+      </div>
+    </div>
+    <div class="form-row form-row-2">
+      <div class="form-field"><label>Tarih *</label><input type="date" id="mrm-tarih"></div>
+      <div class="form-field"><label>Yeni Toplam</label>
+        <input type="text" id="mrm-yeni-toplam" readonly style="background:var(--surface-2);font-weight:700;color:var(--accent);">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Not</label><input type="text" id="mrm-not" placeholder="Revize nedeni..."></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeMektupRevizeModal()">İptal</button>
+      <button class="btn btn-primary" onclick="saveRevize()">Kaydet</button>
+    </div>
+  </div>
+</div>
+
+<!-- TEMİNAT MEKTUBU MODAL -->
+<div class="modal-overlay" id="mektupModal">
+  <div class="modal">
+    <h3 class="modal-title" id="mektupModalTitle">Teminat Mektubu Ekle</h3>
+    <div class="form-row form-row-2">
+      <div class="form-field"><label>Tedarikçi *</label><input type="text" id="mm-supplier"></div>
+      <div class="form-field"><label>Hesap Kodu</label><input type="text" id="mm-code" placeholder="ör. 150.05.01.001"></div>
+    </div>
+    <div class="form-row form-row-2">
+      <div class="form-field"><label>Banka *</label><input type="text" id="mm-bank" placeholder="ör. Yapı Kredi, Garanti..."></div>
+      <div class="form-field"><label>Mektup No</label><input type="text" id="mm-no" placeholder="ör. TM-2026-041"></div>
+    </div>
+    <div class="form-row form-row-2">
+      <div class="form-field">
+        <label>Tutar *</label>
+        <div style="display:flex;gap:4px;">
+          <input type="text" id="mm-tutar" placeholder="0,00" style="flex:1;">
+          <select id="mm-doviz" style="width:70px;">
+            <option value="TRY">TRY</option>
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-field"><label>Teminat Türü</label>
+        <select id="mm-tur">
+          <option value="kesin">Kesin Teminat</option>
+          <option value="nakit">Nakit Teminat</option>
+          <option value="avans">Avans Teminatı</option>
+          <option value="diger">Diğer</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row form-row-2">
+      <div class="form-field"><label>Başlangıç Tarihi</label><input type="date" id="mm-baslangic"></div>
+      <div class="form-field"><label>Vade Tarihi *</label><input type="date" id="mm-vade"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Notlar</label><input type="text" id="mm-notlar" placeholder="Yenileme nedeni, özel koşullar..."></div>
+    </div>
+    <div id="mm-yenileyen-row" style="display:none;" class="form-row">
+      <div class="form-field">
+        <div style="padding:8px 12px;background:rgba(184,134,61,0.08);border:1px solid rgba(184,134,61,0.3);border-radius:6px;font-size:12px;">
+          🔄 Bu mektup bir öncekinin yenilemesi olarak kaydedilecek
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeMektupModal()">İptal</button>
+      <button class="btn btn-primary" onclick="saveMektup()">Kaydet</button>
+    </div>
+  </div>
 </div>
 
 <!-- BUDGET MODAL -->
@@ -1780,6 +1874,7 @@ const DEFAULT_PROJECT = {
   invoices: [],
   collections: [],
   deductions: [],
+  teminatMektuplari: [],
   program: {},
   lastModified: 0
 };
@@ -2227,7 +2322,7 @@ function applyProjectMigrations(p) {
     }
     return c;
   });
-  p.invoices = p.invoices.map(i => ({ ...i, type: i.type || 'material' }));
+  p.teminatMektuplari = p.teminatMektuplari || [];
   p.budget = (p.budget || []).map(b => ({ ...b, currency: b.currency || 'USD' }));
   // Kesinti sütunlarına tür ata (eski kayıtlar)
   const teminatKeys = ['kesinTeminat', 'nakitTeminat', 'kesin_teminat', 'nakit_teminat'];
@@ -5882,9 +5977,340 @@ let deductionChartInst = null;
 function renderDeductionsAll() {
   renderDeductionColumnTags();
   renderDeductionTable();
+  renderMektupTable();
   renderTeminatTable();
   renderDeductionCashflowSummary();
   renderDeductionChart();
+}
+
+// ============================================================
+// TEMİNAT MEKTUPLARI
+// ============================================================
+let editingMektupId = null;
+let mektupYenilevenId = null;
+
+function mektupKalanGun(vade) {
+  if (!vade) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const v = new Date(vade); v.setHours(0,0,0,0);
+  return Math.round((v - today) / 86400000);
+}
+
+function mektupDurumBadge(m) {
+  if (m.status === 'iade')            return '<span class="badge badge-success">✓ İade Edildi</span>';
+  if (m.status === 'yenilendi')       return '<span class="badge" style="background:rgba(184,134,61,0.15);color:#7a5a1a;">🔄 Yenilendi</span>';
+  if (m.status === 'paraya_cevirildi')return '<span class="badge" style="background:#fdecea;color:#a44132;">💸 Paraya Çevrildi</span>';
+  const gun = mektupKalanGun(m.vade);
+  if (gun === null) return '<span class="badge badge-warning">Vade Yok</span>';
+  if (gun < 0)   return `<span class="badge" style="background:#fdecea;color:#a44132;">🔴 Vadesi Geçti (${Math.abs(gun)} gün)</span>`;
+  if (gun <= 30) return `<span class="badge" style="background:#fff3cd;color:#856404;">🟡 ${gun} gün kaldı</span>`;
+  return `<span class="badge badge-success">🟢 ${gun} gün</span>`;
+}
+
+function renderMektupTable() {
+  const tbody = document.getElementById('mektupTableBody');
+  if (!tbody) return;
+
+  // Uyarı barı
+  const uyariBar = document.getElementById('mektupUyariBar');
+  if (uyariBar) {
+    const aktifler = (state.teminatMektuplari || []).filter(m => m.status === 'aktif');
+    const kritik = aktifler.filter(m => { const g = mektupKalanGun(m.vade); return g !== null && g < 0; });
+    const yakin  = aktifler.filter(m => { const g = mektupKalanGun(m.vade); return g !== null && g >= 0 && g <= 30; });
+    let bars = [];
+    if (kritik.length) bars.push(`<span style="color:#a44132;font-weight:600;">🔴 ${kritik.length} mektubun vadesi geçti!</span>`);
+    if (yakin.length)  bars.push(`<span style="color:#856404;font-weight:600;">🟡 ${yakin.length} mektubun vadesi 30 gün içinde doluyor</span>`);
+    uyariBar.innerHTML = bars.length
+      ? `<div style="padding:10px 14px;margin-bottom:12px;background:#fff8ec;border:1px solid #f0c060;border-radius:8px;font-size:13px;display:flex;gap:20px;">${bars.join(' &nbsp;|&nbsp; ')}</div>`
+      : '';
+  }
+
+  tbody.innerHTML = '';
+  const list = [...(state.teminatMektuplari || [])].sort((a,b) => (a.vade||'').localeCompare(b.vade||''));
+
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="11" class="empty-state">Henüz teminat mektubu yok — "+ Mektup Ekle" ile başla</td></tr>';
+    return;
+  }
+
+  list.forEach(m => {
+    const gun = mektupKalanGun(m.vade);
+    const isAktif = m.status === 'aktif';
+    const tr = document.createElement('tr');
+    if (m.status === 'yenilendi') tr.style.opacity = '0.6';
+    if (gun !== null && gun < 0 && isAktif) tr.style.background = 'rgba(164,65,50,0.04)';
+    else if (gun !== null && gun <= 30 && isAktif) tr.style.background = 'rgba(255,243,205,0.5)';
+
+    const turLabel = { kesin:'Kesin Teminat', nakit:'Nakit Teminat', avans:'Avans', diger:'Diğer' }[m.tur] || m.tur || '';
+    const tutarStr = m.doviz === 'TRY' ? fmtTL(m.tutar) : (m.doviz === 'USD' ? fmtUSD(m.tutar) : `€${fmtNum(m.tutar,2)}`);
+
+    tr.innerHTML = `
+      <td>${escapeHtml(m.supplier || '—')}</td>
+      <td class="mono">${m.code || '—'}</td>
+      <td>${escapeHtml(m.bank || '—')}</td>
+      <td class="mono">${escapeHtml(m.no || '—')}</td>
+      <td class="right" style="font-weight:600;">${tutarStr}</td>
+      <td class="center">${m.baslangic ? fmtDate(m.baslangic) : '—'}</td>
+      <td class="center">${m.vade ? fmtDate(m.vade) : '—'}</td>
+      <td class="center">${gun !== null ? (gun < 0 ? `<strong style="color:#a44132;">${Math.abs(gun)} gün geçti</strong>` : `${gun} gün`) : '—'}</td>
+      <td class="center">${mektupDurumBadge(m)}</td>
+      <td style="font-size:11px;color:var(--text-muted);">${escapeHtml(m.notlar || '')}</td>
+      <td class="center" style="white-space:nowrap;">
+        ${isAktif ? `
+          <button class="btn btn-ghost" style="font-size:11px;padding:2px 6px;color:var(--success);" onclick="openMektupRevize('${m.id}')">± Revize</button>
+          <button class="btn btn-ghost" style="font-size:11px;padding:2px 6px;" onclick="yenileMektup('${m.id}')">🔄 Yenile</button>
+          <button class="btn btn-ghost" style="font-size:11px;padding:2px 6px;" onclick="kapatMektup('${m.id}','iade')">✓ İade</button>
+          <button class="btn btn-ghost" style="font-size:11px;padding:2px 6px;color:#a44132;" onclick="kapatMektup('${m.id}','paraya_cevirildi')">💸 Paraya Çevir</button>
+        ` : ''}
+        <button class="btn btn-icon btn-ghost" onclick="editMektup('${m.id}')">Düzenle</button>
+        <button class="btn btn-danger" onclick="deleteMektup('${m.id}')">Sil</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+
+    // Revize geçmişi — varsa göster
+    const revizeler = m.revizeler || [];
+    if (revizeler.length > 0) {
+      const revTr = document.createElement('tr');
+      revTr.style.cssText = 'background:var(--surface-2);';
+      let revHtml = '<td colspan="11" style="padding:6px 16px 10px 40px;">';
+      revHtml += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">📋 Revize Geçmişi:</div>';
+      revHtml += '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+      let kumulatif = 0; // başlangıç tutarını bul
+      // İlk kaydedilen tutarı bul (revizelerden önce)
+      const ilkTutar = revizeler.length > 0 ? revizeler[0].oncekiTutar : m.tutar;
+      revizeler.forEach(r => {
+        const renk = r.tur === 'ekleme' ? 'var(--success)' : '#a44132';
+        const isaret = r.tur === 'ekleme' ? '+' : '-';
+        const tutarGoster = m.doviz === 'TRY' ? fmtTL(r.tutar) : fmtUSD(r.tutar);
+        const yeniGoster  = m.doviz === 'TRY' ? fmtTL(r.yeniTutar) : fmtUSD(r.yeniTutar);
+        revHtml += `<span style="padding:3px 8px;background:var(--surface);border:1px solid var(--border);border-radius:4px;font-size:11px;">
+          <span style="color:${renk};font-weight:600;">${isaret}${tutarGoster}</span>
+          <span style="color:var(--text-muted);margin:0 4px;">→</span>
+          <span style="font-weight:600;">${yeniGoster}</span>
+          <span style="color:var(--text-muted);margin-left:4px;">${fmtDate(r.tarih)}</span>
+          ${r.not ? `<span style="color:var(--text-muted);margin-left:4px;">(${escapeHtml(r.not)})</span>` : ''}
+        </span>`;
+      });
+      revHtml += '</div></td>';
+      revTr.innerHTML = revHtml;
+      tbody.appendChild(revTr);
+    }
+  });
+
+  // Özet toplam
+  const aktifler = list.filter(m => m.status === 'aktif');
+  if (aktifler.length > 0) {
+    const toplamTRY = aktifler.filter(m=>m.doviz==='TRY').reduce((s,m)=>s+(m.tutar||0),0);
+    const toplamUSD = aktifler.filter(m=>m.doviz==='USD').reduce((s,m)=>s+(m.tutar||0),0);
+    const tr = document.createElement('tr');
+    tr.style.cssText = 'font-weight:700;background:rgba(30,58,95,0.06);border-top:2px solid var(--border-strong);';
+    tr.innerHTML = `
+      <td colspan="4" style="font-weight:700;">AKTİF MEKTUP TOPLAMI (${aktifler.length} adet)</td>
+      <td class="right">${toplamTRY > 0 ? fmtTL(toplamTRY) : ''}${toplamTRY > 0 && toplamUSD > 0 ? ' + ' : ''}${toplamUSD > 0 ? fmtUSD(toplamUSD) : ''}</td>
+      <td colspan="6"></td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function openMektupModal(yenilevenId) {
+  if (!requireEdit()) return;
+  editingMektupId = null;
+  mektupYenilevenId = yenilevenId || null;
+  document.getElementById('mektupModalTitle').textContent = yenilevenId ? '🔄 Mektubu Yenile' : 'Teminat Mektubu Ekle';
+  document.getElementById('mm-supplier').value = '';
+  document.getElementById('mm-code').value = '';
+  document.getElementById('mm-bank').value = '';
+  document.getElementById('mm-no').value = '';
+  document.getElementById('mm-tutar').value = '';
+  document.getElementById('mm-doviz').value = 'TRY';
+  document.getElementById('mm-tur').value = 'kesin';
+  document.getElementById('mm-baslangic').value = new Date().toISOString().substring(0,10);
+  document.getElementById('mm-vade').value = '';
+  document.getElementById('mm-notlar').value = '';
+  const yRow = document.getElementById('mm-yenileyen-row');
+  if (yRow) yRow.style.display = yenilevenId ? 'block' : 'none';
+
+  // Yenileme ise önceki mektubun verilerini doldur
+  if (yenilevenId) {
+    const prev = state.teminatMektuplari.find(m => m.id === yenilevenId);
+    if (prev) {
+      document.getElementById('mm-supplier').value = prev.supplier || '';
+      document.getElementById('mm-code').value = prev.code || '';
+      document.getElementById('mm-bank').value = prev.bank || '';
+      document.getElementById('mm-tutar').value = prev.tutar || '';
+      document.getElementById('mm-doviz').value = prev.doviz || 'TRY';
+      document.getElementById('mm-tur').value = prev.tur || 'kesin';
+    }
+  }
+  document.getElementById('mektupModal').classList.add('active');
+}
+
+function closeMektupModal() {
+  document.getElementById('mektupModal').classList.remove('active');
+  mektupYenilevenId = null;
+}
+
+function editMektup(id) {
+  if (!requireEdit()) return;
+  const m = state.teminatMektuplari.find(x => x.id === id);
+  if (!m) return;
+  editingMektupId = id;
+  mektupYenilevenId = null;
+  document.getElementById('mektupModalTitle').textContent = 'Teminat Mektubunu Düzenle';
+  document.getElementById('mm-supplier').value = m.supplier || '';
+  document.getElementById('mm-code').value = m.code || '';
+  document.getElementById('mm-bank').value = m.bank || '';
+  document.getElementById('mm-no').value = m.no || '';
+  document.getElementById('mm-tutar').value = m.tutar || '';
+  document.getElementById('mm-doviz').value = m.doviz || 'TRY';
+  document.getElementById('mm-tur').value = m.tur || 'kesin';
+  document.getElementById('mm-baslangic').value = m.baslangic || '';
+  document.getElementById('mm-vade').value = m.vade || '';
+  document.getElementById('mm-notlar').value = m.notlar || '';
+  const yRow = document.getElementById('mm-yenileyen-row');
+  if (yRow) yRow.style.display = 'none';
+  document.getElementById('mektupModal').classList.add('active');
+}
+
+async function saveMektup() {
+  const supplier = document.getElementById('mm-supplier').value.trim();
+  const vade     = document.getElementById('mm-vade').value;
+  const tutar    = parseDecimal(document.getElementById('mm-tutar').value);
+  if (!supplier) { alert('Tedarikçi zorunlu'); return; }
+  if (!vade)     { alert('Vade tarihi zorunlu'); return; }
+
+  const item = {
+    id:         editingMektupId || ('tm_' + Date.now()),
+    supplier,
+    code:       document.getElementById('mm-code').value.trim(),
+    bank:       document.getElementById('mm-bank').value.trim(),
+    no:         document.getElementById('mm-no').value.trim(),
+    tutar,
+    doviz:      document.getElementById('mm-doviz').value,
+    tur:        document.getElementById('mm-tur').value,
+    baslangic:  document.getElementById('mm-baslangic').value,
+    vade,
+    notlar:     document.getElementById('mm-notlar').value.trim(),
+    status:     'aktif',
+    yenileyen:  mektupYenilevenId || null,
+    revizeler:  []   // revize geçmişi
+  };
+
+  if (!state.teminatMektuplari) state.teminatMektuplari = [];
+
+  // Yenileme ise önceki mektubu "yenilendi" yap
+  if (mektupYenilevenId) {
+    const prev = state.teminatMektuplari.find(m => m.id === mektupYenilevenId);
+    if (prev) prev.status = 'yenilendi';
+  }
+
+  if (editingMektupId) {
+    const idx = state.teminatMektuplari.findIndex(m => m.id === editingMektupId);
+    if (idx >= 0) {
+      item.status = state.teminatMektuplari[idx].status;
+      item.revizeler = state.teminatMektuplari[idx].revizeler || [];
+      state.teminatMektuplari[idx] = item;
+    }
+  } else {
+    state.teminatMektuplari.push(item);
+  }
+
+  closeMektupModal();
+  await saveState();
+  renderDeductionsAll();
+}
+
+let editingRevizeId = null;
+
+function openMektupRevize(id) {
+  if (!requireEdit()) return;
+  editingRevizeId = id;
+  const m = state.teminatMektuplari.find(x => x.id === id);
+  if (!m) return;
+  const tutarStr = m.doviz === 'TRY' ? fmtTL(m.tutar) : fmtUSD(m.tutar);
+  document.getElementById('mrm-title').textContent = `Revize: ${m.no || m.bank}`;
+  document.getElementById('mrm-mevcut').innerHTML = `
+    <strong>Mevcut Tutar:</strong> <span style="color:var(--accent);font-weight:700;">${tutarStr}</span>
+    &nbsp;|&nbsp; <strong>Banka:</strong> ${escapeHtml(m.bank || '—')}
+    &nbsp;|&nbsp; <strong>Tedarikçi:</strong> ${escapeHtml(m.supplier || '—')}
+  `;
+  document.getElementById('mrm-tur').value = 'ekleme';
+  document.getElementById('mrm-tutar').value = '';
+  document.getElementById('mrm-tarih').value = new Date().toISOString().substring(0,10);
+  document.getElementById('mrm-not').value = '';
+  document.getElementById('mrm-yeni-toplam').value = '';
+  document.getElementById('mektupRevizeModal').classList.add('active');
+}
+
+function closeMektupRevizeModal() {
+  document.getElementById('mektupRevizeModal').classList.remove('active');
+  editingRevizeId = null;
+}
+
+function onRevizeTurChange() { onRevizeTutarChange(); }
+
+function onRevizeTutarChange() {
+  const m = state.teminatMektuplari.find(x => x.id === editingRevizeId);
+  if (!m) return;
+  const tur   = document.getElementById('mrm-tur').value;
+  const tutar = parseDecimal(document.getElementById('mrm-tutar').value) || 0;
+  const yeni  = tur === 'ekleme' ? m.tutar + tutar : Math.max(0, m.tutar - tutar);
+  const fmt   = m.doviz === 'TRY' ? fmtTL : fmtUSD;
+  document.getElementById('mrm-yeni-toplam').value = tutar > 0 ? fmt(yeni) : '';
+}
+
+async function saveRevize() {
+  const m = state.teminatMektuplari.find(x => x.id === editingRevizeId);
+  if (!m) return;
+  const tur   = document.getElementById('mrm-tur').value;
+  const tutar = parseDecimal(document.getElementById('mrm-tutar').value);
+  const tarih = document.getElementById('mrm-tarih').value;
+  const not   = document.getElementById('mrm-not').value.trim();
+  if (!tutar || tutar <= 0) { alert('Tutar zorunlu'); return; }
+  if (!tarih) { alert('Tarih zorunlu'); return; }
+
+  const yeniTutar = tur === 'ekleme' ? m.tutar + tutar : Math.max(0, m.tutar - tutar);
+  if (!m.revizeler) m.revizeler = [];
+  m.revizeler.push({
+    id:          'rv_' + Date.now(),
+    tur,
+    tutar,
+    oncekiTutar: m.tutar,
+    yeniTutar,
+    tarih,
+    not
+  });
+  m.tutar = yeniTutar;
+
+  closeMektupRevizeModal();
+  await saveState();
+  renderDeductionsAll();
+}
+
+async function yenileMektup(id) {
+  if (!requireEdit()) return;
+  openMektupModal(id);
+}
+
+async function kapatMektup(id, yeniStatus) {
+  if (!requireEdit()) return;
+  const m = state.teminatMektuplari.find(x => x.id === id);
+  if (!m) return;
+  const label = yeniStatus === 'iade' ? 'İade edildi' : 'Paraya çevrildi';
+  if (!confirm(`"${m.no || m.bank}" mektubu "${label}" olarak işaretlensin mi?`)) return;
+  m.status = yeniStatus;
+  await saveState();
+  renderDeductionsAll();
+}
+
+async function deleteMektup(id) {
+  if (!requireEdit()) return;
+  if (!confirm('Bu teminat mektubu silinecek. Onaylıyor musun?')) return;
+  state.teminatMektuplari = (state.teminatMektuplari || []).filter(m => m.id !== id);
+  await saveState();
+  renderDeductionsAll();
 }
 
 function renderDeductionColumnTags() {
