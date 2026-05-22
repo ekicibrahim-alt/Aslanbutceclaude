@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <style>
@@ -1008,23 +1009,21 @@ body.view-mode .lock-status * {
   <!-- KESİNTİLER TAB -->
   <section class="tab-content" data-tab-content="kesintiler">
     <div class="note">
-      <strong>Taşeron Kesintileri:</strong> Hakediş başına uygulanan kesintiler (Kesin Teminat, Nakit Teminat, Şantiye Yemek, İSG, Hatalı İşler vb.) 
-      bu sayfada tedarikçi/kalem bazında tutulur. <strong>Sütunları özelleştirebilirsin</strong> — istediğin kesinti kalemini ekleyebilir, kullanmadıklarını silebilirsin. 
-      Her satır bir taşerona ait kesintilerin toplamını ve dağılımını gösterir.
+      <strong>Taşeron Kesintileri</strong> — iki türde çalışır:<br>
+      <span style="color:var(--accent);font-weight:600;">📤 Yansıtma</span> (Yemek, ISG, Hatalı İş): Taşerondan kesilir, başka tedarikçiye ödenir. Nakit çıkışı azalmaz, alıcı değişir.<br>
+      <span style="color:#1e3a5f;font-weight:600;">🔒 Teminat</span> (Nakit Teminat, Kesin Teminat): Taşerondan kesilir, sende kalır. İş/garanti sonunda iade edilir.
     </div>
 
-    <!-- Sütun yönetim -->
     <div class="section">
       <div class="section-header">
-        <h2 class="section-title">Kesinti Sütunları</h2>
+        <h2 class="section-title">Kesinti Türleri</h2>
         <div class="section-actions">
-          <button class="btn btn-primary" onclick="addDeductionColumn()">+ Sütun Ekle</button>
+          <button class="btn btn-primary" onclick="openDeductionColumnModal()">+ Tür Ekle</button>
         </div>
       </div>
       <div id="deductionColumnsContainer" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
     </div>
 
-    <!-- Kesinti tablosu -->
     <div class="section">
       <div class="section-header">
         <h2 class="section-title">Kesintiler Tablosu</h2>
@@ -1041,7 +1040,37 @@ body.view-mode .lock-status * {
       </div>
     </div>
 
-    <!-- Dağılım -->
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">🔒 Teminat Takibi</h2>
+        <span style="font-size:12px;color:var(--text-muted);">Birikmiş teminat ve iade planı</span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="data-table" id="teminatTable">
+          <thead>
+            <tr>
+              <th>Tedarikçi</th>
+              <th>Hesap Kodu</th>
+              <th class="right">Nakit Teminat</th>
+              <th class="right">Kesin Teminat</th>
+              <th class="right">Toplam</th>
+              <th class="center">İade Tarihi</th>
+              <th class="center">İade Durumu</th>
+              <th class="center"></th>
+            </tr>
+          </thead>
+          <tbody id="teminatTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">📊 Kesintilerin Nakit Akışa Etkisi</h2>
+      </div>
+      <div id="deductionCashflowSummary"></div>
+    </div>
+
     <div class="section">
       <div class="section-header">
         <h2 class="section-title">Kesinti Dağılımı</h2>
@@ -1051,6 +1080,7 @@ body.view-mode .lock-status * {
       </div>
     </div>
   </section>
+
 
   <!-- TAHSİLAT TAB -->
   <section class="tab-content" data-tab-content="tahsilat">
@@ -1544,9 +1574,18 @@ body.view-mode .lock-status * {
 <!-- DEDUCTION COLUMN MODAL -->
 <div class="modal-overlay" id="deductionColModal">
   <div class="modal" style="width: 420px;">
-    <h3 class="modal-title">Kesinti Sütunu Ekle</h3>
+    <h3 class="modal-title">Kesinti Türü Ekle</h3>
     <div class="form-row">
-      <div class="form-field"><label>Sütun Adı *</label><input type="text" id="dcm-name" placeholder="ör. Stopaj, Avans Mahsubu..."></div>
+      <div class="form-field"><label>Tür Adı *</label><input type="text" id="dcm-name" placeholder="ör. Stopaj, Avans Mahsubu..."></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field">
+        <label>Kesinti Tipi *</label>
+        <select id="dcm-type">
+          <option value="yansitma">📤 Yansıtma — 3. tarafa ödenir (Yemek, ISG, Hatalı İş)</option>
+          <option value="teminat">🔒 Teminat — sende kalır, ileride iade edilir</option>
+        </select>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeDeductionColModal()">İptal</button>
@@ -1646,11 +1685,11 @@ const DEFAULT_PROJECT = {
       { key: 'general', label: 'Genel Gider', color: 'rgba(47, 107, 72, 0.8)' }
     ],
     deductionColumns: [
-      { key: 'kesinTeminat', label: 'Kesin Teminat' },
-      { key: 'nakitTeminat', label: 'Nakit Teminat' },
-      { key: 'santiyeYemek', label: 'Şantiye Yemek' },
-      { key: 'isg', label: 'İSG' },
-      { key: 'hataliIsler', label: 'Hatalı İşler' }
+      { key: 'kesinTeminat', label: 'Kesin Teminat',  type: 'teminat' },
+      { key: 'nakitTeminat', label: 'Nakit Teminat',  type: 'teminat' },
+      { key: 'santiyeYemek', label: 'Şantiye Yemek',  type: 'yansitma' },
+      { key: 'isg',          label: 'İSG',             type: 'yansitma' },
+      { key: 'hataliIsler',  label: 'Hatalı İşler',   type: 'yansitma' }
     ],
     fxProjection: [
       { quarter: '2026-Q1', rate: 36.50 },  // Gerçekleşti — ortalama
@@ -2125,6 +2164,13 @@ function applyProjectMigrations(p) {
   });
   p.invoices = p.invoices.map(i => ({ ...i, type: i.type || 'material' }));
   p.budget = (p.budget || []).map(b => ({ ...b, currency: b.currency || 'USD' }));
+  // Kesinti sütunlarına tür ata (eski kayıtlar)
+  const teminatKeys = ['kesinTeminat', 'nakitTeminat', 'kesin_teminat', 'nakit_teminat'];
+  p.settings.deductionColumns = (p.settings.deductionColumns || []).map(col => {
+    if (col.type) return col; // zaten var
+    const isTeminat = teminatKeys.some(k => col.key === k || col.label.toLowerCase().includes('teminat'));
+    return { ...col, type: isTeminat ? 'teminat' : 'yansitma' };
+  });
   // Eski varsayılan kur projeksiyonu varsa yeni tahminlerle güncelle
   // (Q1 2026'da 42.5 olan eski değer bırakılmışsa güncelle)
   if (p.settings.fxProjection && p.settings.fxProjection.length > 0) {
@@ -5620,6 +5666,8 @@ let deductionChartInst = null;
 function renderDeductionsAll() {
   renderDeductionColumnTags();
   renderDeductionTable();
+  renderTeminatTable();
+  renderDeductionCashflowSummary();
   renderDeductionChart();
 }
 
@@ -5627,19 +5675,25 @@ function renderDeductionColumnTags() {
   const container = document.getElementById('deductionColumnsContainer');
   if (!container) return;
   container.innerHTML = '';
-  state.settings.deductionColumns.forEach((col, idx) => {
+  state.settings.deductionColumns.forEach(col => {
+    const isTeminat = col.type === 'teminat';
     const div = document.createElement('div');
-    div.style.cssText = 'display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px;';
+    div.style.cssText = `display:flex;align-items:center;gap:6px;padding:6px 12px;
+      background:${isTeminat ? 'rgba(30,58,95,0.08)' : 'rgba(184,134,61,0.08)'};
+      border:1px solid ${isTeminat ? 'rgba(30,58,95,0.25)' : 'rgba(184,134,61,0.3)'};
+      border-radius:20px;`;
     div.innerHTML = `
-      <span style="font-size: 13px;">${col.label}</span>
-      <button onclick="removeDeductionColumn('${col.key}')" 
-        style="background: none; border: none; cursor: pointer; color: var(--text-faint); font-size: 14px; padding: 0 4px;"
-        title="Bu sütunu sil">×</button>
+      <span style="font-size:12px;">${isTeminat ? '🔒' : '📤'}</span>
+      <span style="font-size:13px;font-weight:500;">${col.label}</span>
+      <span style="font-size:10px;color:var(--text-muted);">${isTeminat ? 'teminat' : 'yansıtma'}</span>
+      <button onclick="removeDeductionColumn('${col.key}')"
+        style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;padding:0 2px;"
+        title="Sil">×</button>
     `;
     container.appendChild(div);
   });
   if (state.settings.deductionColumns.length === 0) {
-    container.innerHTML = '<span style="color: var(--text-muted); font-size: 12px;">Henüz sütun yok — yukarıdan "+ Sütun Ekle" ile başla</span>';
+    container.innerHTML = '<span style="color:var(--text-muted);font-size:12px;">Henüz kesinti türü yok</span>';
   }
 }
 
@@ -5749,20 +5803,169 @@ function renderDeductionChart() {
   });
 }
 
-function addDeductionColumn() {
+// Teminat tablosu
+function renderTeminatTable() {
+  const tbody = document.getElementById('teminatTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  const teminatCols = state.settings.deductionColumns.filter(c => c.type === 'teminat');
+  if (teminatCols.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Teminat türü tanımlanmamış</td></tr>';
+    return;
+  }
+
+  // Tedarikçi bazında grupla
+  const bySupplier = {};
+  state.deductions.forEach(d => {
+    const key = d.supplier + '||' + (d.code || '');
+    if (!bySupplier[key]) bySupplier[key] = { supplier: d.supplier, code: d.code || '', teminatlar: {}, iadeDate: d.iadeDate || '', iadeStatus: d.iadeStatus || 'bekliyor', id: d.id };
+    teminatCols.forEach(col => {
+      bySupplier[key].teminatlar[col.key] = (bySupplier[key].teminatlar[col.key] || 0) + ((d.columns && d.columns[col.key]) || 0);
+    });
+  });
+
+  let totalTeminat = 0;
+  Object.values(bySupplier).forEach(s => {
+    const nakitT = s.teminatlar['nakitTeminat'] || 0;
+    const kesinT = s.teminatlar['kesinTeminat'] || 0;
+    const toplamT = Object.values(s.teminatlar).reduce((a, b) => a + b, 0);
+    if (toplamT === 0) return;
+    totalTeminat += toplamT;
+
+    const isIade = s.iadeStatus === 'iade';
+    const tr = document.createElement('tr');
+    if (isIade) tr.style.background = 'rgba(47,107,72,0.05)';
+
+    tr.innerHTML = `
+      <td>${s.supplier}</td>
+      <td class="mono">${s.code}</td>
+      <td class="right">${nakitT ? fmtTL(nakitT) : '—'}</td>
+      <td class="right">${kesinT ? fmtTL(kesinT) : '—'}</td>
+      <td class="right"><strong>${fmtTL(toplamT)}</strong></td>
+      <td class="center">${s.iadeDate ? fmtDate(s.iadeDate) : '<span style="color:var(--text-muted)">—</span>'}</td>
+      <td class="center">
+        ${isIade
+          ? '<span class="badge badge-success">İade Edildi</span>'
+          : `<span class="badge badge-warning" style="cursor:pointer;" onclick="toggleTeminatIade('${s.id}', '${s.supplier}', '${s.code}')">Bekliyor →</span>`
+        }
+      </td>
+      <td class="center">
+        <button class="btn btn-ghost" style="font-size:11px;" onclick="setTeminatIade('${s.supplier}', '${s.code}')">İade Tarihi</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  if (Object.values(bySupplier).filter(s => Object.values(s.teminatlar).reduce((a,b)=>a+b,0) > 0).length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Teminat kesintisi girilmemiş</td></tr>';
+    return;
+  }
+
+  // Toplam
+  const tr = document.createElement('tr');
+  tr.style.fontWeight = '700';
+  tr.innerHTML = `<td colspan="4"><strong>TOPLAM TEMİNAT</strong></td><td class="right"><strong>${fmtTL(totalTeminat)}</strong></td><td colspan="3"></td>`;
+  tbody.appendChild(tr);
+}
+
+async function toggleTeminatIade(id, supplier, code) {
+  if (!requireEdit()) return;
+  if (!confirm(`"${supplier}" için tüm teminatlar iade edildi olarak işaretlensin mi?`)) return;
+  // O tedarikçi/kodun tüm kesintilerini güncelle
+  state.deductions.forEach(d => {
+    if (d.supplier === supplier && (d.code || '') === code) {
+      d.iadeStatus = 'iade';
+      if (!d.iadeDate) d.iadeDate = new Date().toISOString().substring(0, 10);
+    }
+  });
+  await saveState();
+  renderDeductionsAll();
+}
+
+async function setTeminatIade(supplier, code) {
+  if (!requireEdit()) return;
+  const tarih = prompt('İade tarihi (YYYY-AA-GG):', new Date().toISOString().substring(0, 10));
+  if (!tarih) return;
+  state.deductions.forEach(d => {
+    if (d.supplier === supplier && (d.code || '') === code) {
+      d.iadeDate = tarih;
+    }
+  });
+  await saveState();
+  renderDeductionsAll();
+}
+
+// Nakit akışa etki özeti
+function renderDeductionCashflowSummary() {
+  const el = document.getElementById('deductionCashflowSummary');
+  if (!el) return;
+
+  const teminatCols = state.settings.deductionColumns.filter(c => c.type === 'teminat');
+  const yansitmaCols = state.settings.deductionColumns.filter(c => c.type === 'yansitma');
+
+  let toplamTeminat = 0, toplamYansitma = 0, iadeEdilen = 0;
+
+  state.deductions.forEach(d => {
+    teminatCols.forEach(col => {
+      const v = (d.columns && d.columns[col.key]) || 0;
+      toplamTeminat += v;
+      if (d.iadeStatus === 'iade') iadeEdilen += v;
+    });
+    yansitmaCols.forEach(col => {
+      toplamYansitma += (d.columns && d.columns[col.key]) || 0;
+    });
+  });
+
+  const bekleyenTeminat = toplamTeminat - iadeEdilen;
+  const fx = getCurrentFx();
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:8px;">
+      <div class="kpi-card" style="border-left:3px solid #1e3a5f;">
+        <div class="label">🔒 Toplam Teminat Birikimi</div>
+        <div class="value">${fmtTL(toplamTeminat)}</div>
+        <div class="value-secondary">${fmtUSD(toplamTeminat / fx)}</div>
+      </div>
+      <div class="kpi-card" style="border-left:3px solid var(--danger);">
+        <div class="label">⏳ Bekleyen İade</div>
+        <div class="value">${fmtTL(bekleyenTeminat)}</div>
+        <div class="value-note">İleride nakit girişi olacak</div>
+      </div>
+      <div class="kpi-card" style="border-left:3px solid var(--accent);">
+        <div class="label">📤 Toplam Yansıtma</div>
+        <div class="value">${fmtTL(toplamYansitma)}</div>
+        <div class="value-note">3. taraflara ödendi</div>
+      </div>
+    </div>
+    <div style="margin-top:12px;padding:12px;background:var(--surface-2);border-radius:8px;font-size:12px;color:var(--text-muted);">
+      <strong>Nakit Akışa Etkisi:</strong>
+      Yansıtma (${fmtTL(toplamYansitma)}) nakit çıkışını azaltmaz — alıcı değişir.
+      Teminat (${fmtTL(bekleyenTeminat)}) hakediş ödemelerini azaltır ve bekleyen nakit girişi oluşturur.
+      Teminatlar iade edilince nakit akışa <strong style="color:var(--success);">+${fmtTL(bekleyenTeminat)}</strong> olarak yansır.
+    </div>
+  `;
+}
+
+function openDeductionColumnModal() {
   if (!requireEdit()) return;
   document.getElementById('dcm-name').value = '';
+  const typeEl = document.getElementById('dcm-type');
+  if (typeEl) typeEl.value = 'yansitma';
   document.getElementById('deductionColModal').classList.add('active');
 }
+function addDeductionColumn() { openDeductionColumnModal(); }
 function closeDeductionColModal() {
   document.getElementById('deductionColModal').classList.remove('active');
 }
 async function saveDeductionColumn() {
   if (!requireEdit()) return;
   const name = document.getElementById('dcm-name').value.trim();
-  if (!name) { alert('Sütun adı zorunlu'); return; }
+  if (!name) { alert('Tür adı zorunlu'); return; }
+  const typeEl = document.getElementById('dcm-type');
+  const type = typeEl ? typeEl.value : 'yansitma';
   const key = 'col_' + Date.now();
-  state.settings.deductionColumns.push({ key, label: name });
+  state.settings.deductionColumns.push({ key, label: name, type });
   closeDeductionColModal();
   await saveState();
   renderDeductionsAll();
@@ -5860,445 +6063,515 @@ async function deleteDeduction(id) {
 // ============================================================
 // EXCEL (XLSX) EXPORT
 // ============================================================
-function exportXlsx() {
+async function exportXlsx() {
   if (!requireEdit()) return;
-  if (typeof XLSX === 'undefined') { alert('Excel kütüphanesi yüklenemedi.'); return; }
+  if (typeof ExcelJS === 'undefined') { alert('ExcelJS yüklenemedi.'); return; }
 
-  const wb = XLSX.utils.book_new();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Bütçe & Nakit Akış';
+  wb.created = new Date();
+
   const fx = getCurrentFx();
   const overall = computeOverallProgress();
-  const cats = computeCategoryBreakdown();
   const cf = computeCashflow();
+  const projName = state.settings.projectName || 'Proje';
 
-  // Sayı formatları
-  const FMT_TL  = '#,##0.00 "₺"';
-  const FMT_USD = '"$"#,##0.00';
-  const FMT_NUM = '#,##0.00';
-  const FMT_PCT = '0.00"%"';
-  const FMT_DATE = 'DD.MM.YYYY';
-  const FMT_INT = '#,##0';
+  // ─── RENK PALETİ (web ile aynı) ───────────────────────────────
+  const C = {
+    navy:     'FF1E3A5F',   // level-1 arka plan
+    navyLight:'FFD6E0EC',
+    amber:    'FFB8863D',   // accent / level-2
+    amberLight:'FFFDF3E1',
+    green:    'FF2F6B48',   // success
+    greenLight:'FFE8F3ED',
+    red:      'FFA44132',   // danger
+    redLight: 'FFFDECEA',
+    bg:       'FFF7F4EC',   // sayfa arka planı
+    surface:  'FFFFFFFF',
+    border:   'FFE3DCCB',
+    text:     'FF1A1A1A',
+    muted:    'FF6A655C',
+    white:    'FFFFFFFF',
+    headerBg: 'FF1E3A5F',
+  };
 
-  // Yardımcı: belirli kolon + satır aralığına sayı formatı uygula
-  function applyFmt(ws, cols, rowStart, rowEnd, fmt) {
-    cols.forEach(col => {
-      for (let r = rowStart; r <= rowEnd; r++) {
-        const addr = col + r;
-        if (ws[addr] && ws[addr].t === 'n') ws[addr].z = fmt;
-      }
+  // ─── YARDIMCI FONKSİYONLAR ────────────────────────────────────
+  const fmt_usd = '"$"#,##0.00';
+  const fmt_tl  = '#,##0.00 "₺"';
+  const fmt_num = '#,##0.00';
+  const fmt_pct = '0.00"%"';
+  const fmt_date= 'DD.MM.YYYY';
+
+  function hdr(ws, cols) {
+    // Başlık satırı stili
+    const row = ws.getRow(1);
+    row.height = 28;
+    cols.forEach((col, i) => {
+      const cell = row.getCell(i + 1);
+      cell.value = col.header;
+      cell.font = { bold: true, color: { argb: C.white }, size: 10, name: 'IBM Plex Sans' };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.headerBg } };
+      cell.alignment = { vertical: 'middle', horizontal: col.align || 'left', wrapText: true };
+      cell.border = { bottom: { style: 'medium', color: { argb: C.amber } } };
+      ws.getColumn(i + 1).width = col.width || 14;
+      if (col.numFmt) ws.getColumn(i + 1).numFmt = col.numFmt;
+    });
+    ws.getRow(1).commit();
+    ws.views = [{ state: 'frozen', ySplit: 1, xSplit: col.freeze || 0 }];
+  }
+
+  function styleDataRow(row, level, extra) {
+    let bgArgb = null;
+    let fontBold = false;
+    let fontSize = 9;
+    if (level === 1)      { bgArgb = C.navyLight;  fontBold = true;  fontSize = 10; }
+    else if (level === 2) { bgArgb = C.amberLight; fontBold = true;  fontSize = 9; }
+    else if (level === 3) { bgArgb = 'FFE8F3ED';   fontBold = false; }
+    if (extra && extra.danger)  bgArgb = C.redLight;
+    if (extra && extra.revize)  bgArgb = 'FFFFF3CD';
+
+    row.eachCell({ includeEmpty: false }, cell => {
+      if (bgArgb) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgArgb } };
+      cell.font = { bold: fontBold, size: fontSize, name: 'Calibri' };
+      cell.border = { bottom: { style: 'thin', color: { argb: C.border } } };
     });
   }
-  // Yardımcı: tek hücreye format uygula
-  function cellFmt(ws, addr, fmt) {
-    if (ws[addr]) ws[addr].z = fmt;
+
+  function totRow(ws, rowNum, label) {
+    const row = ws.getRow(rowNum);
+    row.height = 20;
+    row.eachCell({ includeEmpty: false }, cell => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.navyLight } };
+      cell.font = { bold: true, size: 10, name: 'Calibri' };
+      cell.border = { top: { style: 'medium', color: { argb: C.navy } } };
+    });
   }
 
-  // ============================================================
-  // SAYFA 1 — BÜTÇE (Hiyerarşik gruplandırma + doğru alt toplam formülleri)
-  // ============================================================
-  // Sütunlar: A=Kod B=Seviye C=Kalem D=Tedarikçi E=Tip F=Miktar G=Birim H=B.Fiyat I=Para
-  //           J=Baz USD K=Baz TL  L=Revize USD  M=Gerçekleşme USD  N=Gerçekleşme TL
-  //           O=Kalan USD  P=Kalan TL  Q=Durum  R=ID
-  const budgetHeader = [
-    'Kod','Seviye','Kalem','Tedarikçi','Tip','Miktar','Birim','B.Fiyat','Para',
-    'Baz Bütçe USD','Baz Bütçe TL','Revize USD',
-    'Gerçekleşme USD','Gerçekleşme TL',
-    'Kalan USD','Kalan TL',
-    'Durum','ID'
+  // ─────────────────────────────────────────────────────────────
+  // SAYFA 1 — BÜTÇE
+  // ─────────────────────────────────────────────────────────────
+  const wsBudget = wb.addWorksheet('Bütçe', { views: [{ state: 'frozen', ySplit: 1, xSplit: 3 }] });
+  wsBudget.columns = [
+    { header: 'Kod',           key: 'code',    width: 16 },
+    { header: 'Lv',            key: 'level',   width: 4  },
+    { header: 'Kalem Adı',     key: 'name',    width: 36 },
+    { header: 'Tedarikçi',     key: 'sup',     width: 20 },
+    { header: 'Tip',           key: 'tip',     width: 14 },
+    { header: 'Miktar',        key: 'qty',     width: 9, numFmt: fmt_num },
+    { header: 'Birim',         key: 'unit',    width: 7  },
+    { header: 'B.Fiyat',       key: 'price',   width: 16, numFmt: fmt_num },
+    { header: 'Para',          key: 'ccy',     width: 5  },
+    { header: 'Baz Bütçe USD', key: 'baseUsd', width: 16, numFmt: fmt_usd },
+    { header: 'Baz Bütçe TL',  key: 'baseTry', width: 18, numFmt: fmt_tl  },
+    { header: 'Revize USD',    key: 'revUsd',  width: 14, numFmt: fmt_usd },
+    { header: 'Gerç. USD',     key: 'actUsd',  width: 14, numFmt: fmt_usd },
+    { header: 'Gerç. TL',      key: 'actTry',  width: 16, numFmt: fmt_tl  },
+    { header: 'Kalan USD',     key: 'remUsd',  width: 14, numFmt: fmt_usd },
+    { header: 'Kalan TL',      key: 'remTry',  width: 16, numFmt: fmt_tl  },
+    { header: 'Durum',         key: 'durum',   width: 9  },
   ];
+
+  // Header stili
+  const hdrRowB = wsBudget.getRow(1);
+  hdrRowB.height = 26;
+  hdrRowB.eachCell(cell => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.headerBg } };
+    cell.font = { bold: true, color: { argb: C.white }, size: 10 };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = { bottom: { style: 'medium', color: { argb: C.amber } } };
+  });
+
   const sortedBudget = [...state.budget].sort((a, b) => a.code.localeCompare(b.code));
-  
-  // Her kalem için Excel satır numarasını tut (formüllerde kullanmak için)
-  const codeToRow = {}; // code → excel row number (1-based, header=1)
-  sortedBudget.forEach((b, i) => { codeToRow[b.code] = i + 2; });
-  
-  const budgetRows = [budgetHeader];
-  const rowMeta = []; // her veri satırı için {level, isLeaf, hasChildren, code}
+  let bTotBaseUsd = 0, bTotBaseTry = 0, bTotActUsd = 0, bTotActTry = 0;
+  let bHasRevise = false;
 
-  sortedBudget.forEach(b => {
+  sortedBudget.forEach((b, idx) => {
     const isLeaf = isBudgetLeaf(b);
-    const hasKids = hasChildren(b);
-    const revUsd = b.revisedBudgetUsd != null ? b.revisedBudgetUsd : null;
-    const actUsd = getBudgetItemActualUsd(b);
-    const actTry = getBudgetItemActualTry(b);
-    let durum = actUsd > (revUsd||getBudgetItemTotalUsd(b)) + 0.01 ? 'AŞIM' : (revUsd != null ? 'Revize' : (actUsd > 0 ? 'Normal' : ''));
-
-    budgetRows.push([
-      b.code, b.level, b.name, b.supplier || '',
-      getCategoryLabel(b.materialType),
-      isLeaf ? ((b.qty && b.qty > 0) ? b.qty : (b.unitPrice > 0 ? 1 : '')) : '',
-      b.unit || '',
-      isLeaf ? (b.unitPrice || 0) : '',
-      b.currency || 'USD',
-      null, null, // J=Baz USD, K=Baz TL — formül ile
-      revUsd != null ? revUsd : '',
-      actUsd > 0 ? actUsd : '', actTry > 0 ? actTry : '',
-      null, null, // O=Kalan USD, P=Kalan TL — formül ile
-      durum, b.id
-    ]);
-    rowMeta.push({ level: b.level, isLeaf, hasKids, code: b.code });
-  });
-
-  const bN = budgetRows.length; // son veri satırı (1-based)
-  const bTot = bN + 1;
-  budgetRows.push(['TOPLAM','','','','','','','','',null,null,'',null,null,null,null,'','']);
-
-  const budgetWs = XLSX.utils.aoa_to_sheet(budgetRows);
-
-  // Formüller — her satır için
-  for (let i = 2; i <= bN; i++) {
-    const meta = rowMeta[i - 2];
-    const b = sortedBudget[i - 2];
-
-    if (meta.isLeaf) {
-      // Yaprak kalem: J = F*H (miktar × birim fiyat)
-      budgetWs[`J${i}`] = { t: 'n', f: `IF(I${i}="TRY",(IF(F${i}="",1,F${i})*H${i})/${fx},IF(F${i}="",1,F${i})*H${i})` };
-      budgetWs[`K${i}`] = { t: 'n', f: `IF(I${i}="TRY",IF(F${i}="",1,F${i})*H${i},IF(F${i}="",1,F${i})*H${i}*${fx})` };
-    } else {
-      // Ana/ara kategori: J = alt kalemlerinin TOPLA'sı
-      // Alt kalem satır numaralarını bul
-      const childRows = sortedBudget
-        .map((cb, ci) => ({ b: cb, row: ci + 2 }))
-        .filter(({ b: cb }) => cb.code !== b.code && cb.code.startsWith(b.code + '.') && isBudgetLeaf(cb))
-        .map(({ row }) => row);
-      
-      if (childRows.length > 0) {
-        const jRefs = childRows.map(r => `J${r}`).join('+');
-        const kRefs = childRows.map(r => `K${r}`).join('+');
-        budgetWs[`J${i}`] = { t: 'n', f: jRefs };
-        budgetWs[`K${i}`] = { t: 'n', f: kRefs };
-      } else {
-        budgetWs[`J${i}`] = { t: 'n', v: 0 };
-        budgetWs[`K${i}`] = { t: 'n', v: 0 };
-      }
-    }
-
-    // Kalan = Revize (L) varsa L-M, yoksa J-M
-    budgetWs[`O${i}`] = { t: 'n', f: `IF(L${i}<>"",L${i},J${i})-IF(M${i}="",0,M${i})` };
-    budgetWs[`P${i}`] = { t: 'n', f: `IF(L${i}<>"",L${i}*${fx},K${i})-IF(N${i}="",0,N${i})` };
-  }
-
-  // Toplam satırı — sadece level 1 olanların toplamı (çift sayma önle)
-  const level1Rows = rowMeta.map((m,i) => m.level === 1 ? i+2 : null).filter(Boolean);
-  if (level1Rows.length > 0) {
-    const jSum = level1Rows.map(r => `J${r}`).join('+');
-    const kSum = level1Rows.map(r => `K${r}`).join('+');
-    budgetWs[`J${bTot}`] = { t: 'n', f: jSum };
-    budgetWs[`K${bTot}`] = { t: 'n', f: kSum };
-    ['L','M','N','O','P'].forEach(col => {
-      budgetWs[`${col}${bTot}`] = { t: 'n', f: `SUM(${col}2:${col}${bN})` };
-    });
-  } else {
-    ['J','K','L','M','N','O','P'].forEach(col => {
-      budgetWs[`${col}${bTot}`] = { t: 'n', f: `SUM(${col}2:${col}${bN})` };
-    });
-  }
-
-  // Excel satır outline gruplandırması (açılır/kapanır)
-  const rowsConfig = [];
-  rowsConfig.push({}); // header satırı (index 0, excel row 1)
-  rowMeta.forEach((meta, i) => {
-    // Excel outline level: level 1 = ana kategori (grup başı, level=0 olmalı)
-    // alt kalemler level=1, daha derin olanlar level=2 vs
-    const outlineLevel = Math.max(0, meta.level - 1);
-    rowsConfig.push({ level: outlineLevel });
-  });
-  rowsConfig.push({}); // TOPLAM satırı
-  budgetWs['!rows'] = rowsConfig;
-
-  budgetWs['!ref'] = `A1:R${bTot}`;
-  budgetWs['!cols'] = [
-    {wch:16},{wch:6},{wch:34},{wch:20},{wch:12},{wch:8},{wch:7},{wch:14},{wch:5},
-    {wch:16},{wch:18},{wch:14},{wch:18},{wch:18},{wch:14},{wch:18},{wch:8},{wch:16}
-  ];
-  budgetWs['!freeze'] = { xSplit: 3, ySplit: 1 }; // ilk 3 sütun + başlık dondur
-  applyFmt(budgetWs, ['J','L','M','O'], 2, bTot, FMT_USD);
-  applyFmt(budgetWs, ['K','N','P'], 2, bTot, FMT_TL);
-  applyFmt(budgetWs, ['F','H'], 2, bN, FMT_NUM);
-  XLSX.utils.book_append_sheet(wb, budgetWs, 'Bütçe');
-
-  // ============================================================
-  // SAYFA 2 — FATURALAR
-  // ============================================================
-  // A=FatNo B=Cari C=F.Tar D=Vade E=Kod F=Tip G=Açıklama
-  // H=Net TL  I=KDV1% J=KDV1TL K=KDV2% L=KDV2TL M=KDV3% N=KDV3TL O=KDV4% P=KDV4TL
-  // Q=KDVTop R=Stop% S=StopTL T=Tevk% U=TevkTL V=GenTop
-  // W=Taksit X=Ödenen Y=Kalan Z=FxKuru AA=Durum AB=ID
-  const invHeader = [
-    'Fatura No','Cari Adı','F.Tarihi','Vade','Hesap Kodu','Tip','Açıklama',
-    'Net TL','KDV1 %','KDV1 TL','KDV2 %','KDV2 TL','KDV3 %','KDV3 TL','KDV4 %','KDV4 TL',
-    'KDV Toplam','Stopaj %','Stopaj TL','Tevkifat %','Tevkifat TL','Genel Toplam',
-    'Taksit Sayısı','Ödenen','Kalan','USD Kuru','Durum','ID'
-  ];
-  const sortedInv = [...state.invoices].sort((a,b) => new Date(b.date) - new Date(a.date));
-  const invRows = [invHeader];
-  sortedInv.forEach(inv => {
-    const c = calcInvoiceTotals(inv);
-    const kdv = c.kdvRows || [];
-    invRows.push([
-      inv.invoiceNo || '', inv.supplier || '', inv.date || '', inv.dueDate || '',
-      inv.code || '', getCategoryLabel(inv.type), inv.desc || '',
-      c.net,
-      kdv[0]?.rate ?? '', kdv[0]?.amount ?? '',
-      kdv[1]?.rate ?? '', kdv[1]?.amount ?? '',
-      kdv[2]?.rate ?? '', kdv[2]?.amount ?? '',
-      kdv[3]?.rate ?? '', kdv[3]?.amount ?? '',
-      null, c.stopajRate, null, c.tevkifatRate, null, null,
-      c.installments.length, c.totalPaid, null,
-      inv.fxRate || '',
-      c.overallStatus === 'paid' ? 'Ödendi' : (c.overallStatus === 'partial' ? 'Kısmi' : 'Bekliyor'),
-      inv.id
-    ]);
-  });
-  const iN = invRows.length;
-  const iTot = iN + 1;
-  invRows.push(['TOPLAM','','','','','','',null,'',null,'',null,'',null,'',null,null,'',null,'',null,null,'',null,null,'','','']);
-  const invWs = XLSX.utils.aoa_to_sheet(invRows);
-  for (let i = 2; i <= iN; i++) {
-    invWs[`Q${i}`] = { t:'n', f:`J${i}+L${i}+N${i}+P${i}` };
-    invWs[`S${i}`] = { t:'n', f:`H${i}*(R${i}/100)` };
-    invWs[`U${i}`] = { t:'n', f:`Q${i}*(T${i}/100)` };
-    invWs[`V${i}`] = { t:'n', f:`H${i}+Q${i}-S${i}-U${i}` };
-    invWs[`Y${i}`] = { t:'n', f:`X${i}-W${i}` }; // Kalan = Ödenen - Taksit? Hayır: Kalan = GenTop - Ödenen
-    invWs[`Y${i}`] = { t:'n', f:`V${i}-X${i}` };
-  }
-  ['H','J','L','N','P','Q','S','U','V','X','Y'].forEach(col => {
-    invWs[`${col}${iTot}`] = { t:'n', f:`SUM(${col}2:${col}${iN})` };
-  });
-  invWs['!ref'] = `A1:AB${iTot}`;
-  invWs['!cols'] = [
-    {wch:14},{wch:22},{wch:11},{wch:11},{wch:14},{wch:12},{wch:26},
-    {wch:14},{wch:7},{wch:12},{wch:7},{wch:12},{wch:7},{wch:12},{wch:7},{wch:12},
-    {wch:13},{wch:8},{wch:12},{wch:8},{wch:12},{wch:15},
-    {wch:8},{wch:13},{wch:13},{wch:10},{wch:9},{wch:16}
-  ];
-  invWs['!freeze'] = { xSplit: 0, ySplit: 1 };
-  invWs['!autofilter'] = { ref: 'A1:AB1' };
-  applyFmt(invWs, ['H','J','L','N','P','Q','S','U','V','X','Y'], 2, iTot, FMT_TL);
-  applyFmt(invWs, ['C','D'], 2, iN, FMT_DATE);
-  XLSX.utils.book_append_sheet(wb, invWs, 'Faturalar');
-
-  // ============================================================
-  // SAYFA 3 — ÖDEME PLANI
-  // ============================================================
-  const payHeader = ['Fatura No','Cari Adı','Taksit #','Vade','Taksit Tutarı','Ödenen','Kalan','Ödeme Tarihi','Durum'];
-  const payRows = [payHeader];
-  sortedInv.forEach(inv => {
-    const c = calcInvoiceTotals(inv);
-    c.installments.forEach((inst, idx) => {
-      payRows.push([
-        inv.invoiceNo || inv.id, inv.supplier || '',
-        idx + 1, inst.dueDate || '',
-        inst.amount || 0, inst.paidAmount || 0, null,
-        inst.paidDate || '', inst.status === 'paid' ? 'Ödendi' : 'Bekliyor'
-      ]);
-    });
-  });
-  const pN = payRows.length;
-  payRows.push(['TOPLAM','','','',null,null,null,'','']);
-  const payWs = XLSX.utils.aoa_to_sheet(payRows);
-  for (let i = 2; i <= pN; i++) payWs[`G${i}`] = { t:'n', f:`E${i}-F${i}` };
-  ['E','F','G'].forEach(col => { payWs[`${col}${pN+1}`] = { t:'n', f:`SUM(${col}2:${col}${pN})` }; });
-  payWs['!ref'] = `A1:I${pN+1}`;
-  payWs['!cols'] = [{wch:16},{wch:22},{wch:8},{wch:12},{wch:16},{wch:16},{wch:16},{wch:12},{wch:10}];
-  payWs['!freeze'] = { xSplit: 0, ySplit: 1 };
-  payWs['!autofilter'] = { ref: 'A1:I1' };
-  applyFmt(payWs, ['E','F','G'], 2, pN+1, FMT_TL);
-  applyFmt(payWs, ['D','H'], 2, pN, FMT_DATE);
-  XLSX.utils.book_append_sheet(wb, payWs, 'Ödeme Planı');
-
-  // ============================================================
-  // SAYFA 4 — KESİNTİLER
-  // ============================================================
-  const dCols = state.settings.deductionColumns;
-  const dHeader = ['Tedarikçi','Kod','Açıklama',...dCols.map(c=>c.label),'Toplam'];
-  const dRows = [dHeader];
-  state.deductions.forEach(d => {
-    dRows.push([d.supplier, d.code||'', d.desc||'', ...dCols.map(c=>(d.columns&&d.columns[c.key])||0), null]);
-  });
-  const dN = dRows.length;
-  dRows.push(['TOPLAM','','',...dCols.map(()=>null),null]);
-  const dWs = XLSX.utils.aoa_to_sheet(dRows);
-  const dTotCol = XLSX.utils.encode_col(3 + dCols.length);
-  const dStartCol = 'D', dEndCol = XLSX.utils.encode_col(2 + dCols.length);
-  for (let i = 2; i <= dN; i++) dWs[`${dTotCol}${i}`] = { t:'n', f:`SUM(${dStartCol}${i}:${dEndCol}${i})` };
-  for (let c=0; c<dCols.length; c++) {
-    const col = XLSX.utils.encode_col(3+c);
-    dWs[`${col}${dN+1}`] = { t:'n', f:`SUM(${col}2:${col}${dN})` };
-  }
-  dWs[`${dTotCol}${dN+1}`] = { t:'n', f:`SUM(${dTotCol}2:${dTotCol}${dN})` };
-  dWs['!ref'] = `A1:${dTotCol}${dN+1}`;
-  dWs['!cols'] = [{wch:22},{wch:14},{wch:26},...dCols.map(()=>({wch:14})),{wch:14}];
-  dWs['!freeze'] = { xSplit: 0, ySplit: 1 };
-  const dNumCols = Array.from({length: dCols.length+1}, (_,i) => XLSX.utils.encode_col(3+i));
-  applyFmt(dWs, dNumCols, 2, dN+1, FMT_TL);
-  XLSX.utils.book_append_sheet(wb, dWs, 'Kesintiler');
-
-  // ============================================================
-  // SAYFA 5 — TAHSİLAT
-  // ============================================================
-  const cHeader = ['Vade','Müşteri','Sözleşme Tar.','Açıklama','Plan TL','Gerç. Tarihi','Gerç. TL','Durum'];
-  const cRows = [cHeader, ...state.collections.map(c=>[
-    c.dueDate, c.customer||'', c.contractDate||'', c.desc||'',
-    c.planAmount||0, c.actualDate||'', c.actualAmount||0, getCollectionStatus(c).label
-  ])];
-  const cN = cRows.length;
-  cRows.push(['TOPLAM','','','',null,'',null,'']);
-  const cWs = XLSX.utils.aoa_to_sheet(cRows);
-  cWs[`E${cN+1}`] = { t:'n', f:`SUM(E2:E${cN})` };
-  cWs[`G${cN+1}`] = { t:'n', f:`SUM(G2:G${cN})` };
-  cWs['!ref'] = `A1:H${cN+1}`;
-  cWs['!cols'] = [{wch:12},{wch:24},{wch:14},{wch:22},{wch:16},{wch:14},{wch:16},{wch:12}];
-  cWs['!freeze'] = { xSplit: 0, ySplit: 1 };
-  applyFmt(cWs, ['E','G'], 2, cN+1, FMT_TL);
-  applyFmt(cWs, ['A','F'], 2, cN, FMT_DATE);
-  XLSX.utils.book_append_sheet(wb, cWs, 'Tahsilat');
-
-  // ============================================================
-  // SAYFA 6 — NAKİT AKIŞ (TL + USD)
-  // ============================================================
-  const cfHeader = [
-    'Ay','USD/TRY',
-    'Plan Harcama TL','Plan Harcama USD',
-    'Gerç. Harcama TL','Gerç. Harcama USD',
-    'Plan Tahsilat TL','Plan Tahsilat USD',
-    'Gerç. Tahsilat TL','Gerç. Tahsilat USD',
-    'Net Akış TL','Net Akış USD',
-    'Küm. Finansman TL','Küm. Finansman USD'
-  ];
-  const cfRows = [cfHeader];
-  cf.forEach(r => {
-    cfRows.push([
-      r.month, r.fx,
-      r.planTry, r.planUsd,
-      r.actualTry, r.actualUsd,
-      r.collectionPlanTry, r.collectionPlanUsd,
-      r.collectionActualTry, r.collectionActualUsd,
-      null, null, null, null
-    ]);
-  });
-  const cfN = cfRows.length;
-  cfRows.push(['TOPLAM','',null,null,null,null,null,null,null,null,null,null,null,null]);
-  const cfWs = XLSX.utils.aoa_to_sheet(cfRows);
-  for (let i = 2; i <= cfN; i++) {
-    cfWs[`K${i}`] = { t:'n', f:`I${i}-E${i}` };           // Net TL = Gerç.Tahsilat - Gerç.Harcama
-    cfWs[`L${i}`] = { t:'n', f:`J${i}-F${i}` };           // Net USD
-    cfWs[`M${i}`] = { t:'n', f: i===2 ? `K${i}` : `M${i-1}+K${i}` }; // Küm TL
-    cfWs[`N${i}`] = { t:'n', f: i===2 ? `L${i}` : `N${i-1}+L${i}` }; // Küm USD
-  }
-  ['C','D','E','F','G','H','I','J'].forEach(col => {
-    cfWs[`${col}${cfN+1}`] = { t:'n', f:`SUM(${col}2:${col}${cfN})` };
-  });
-  cfWs['!ref'] = `A1:N${cfN+1}`;
-  cfWs['!cols'] = [{wch:10},{wch:9},{wch:16},{wch:16},{wch:16},{wch:16},{wch:16},{wch:16},{wch:16},{wch:16},{wch:14},{wch:14},{wch:18},{wch:18}];
-  cfWs['!freeze'] = { xSplit: 0, ySplit: 1 };
-  applyFmt(cfWs, ['C','E','G','I','K','M'], 2, cfN+1, FMT_TL);
-  applyFmt(cfWs, ['D','F','H','J','L','N'], 2, cfN+1, FMT_USD);
-  applyFmt(cfWs, ['B'], 2, cfN, FMT_NUM);
-  XLSX.utils.book_append_sheet(wb, cfWs, 'Nakit Akış');
-
-  // ============================================================
-  // SAYFA 7 — İŞ PROGRAMI
-  // ============================================================
-  const progHeader = ['Kod','Kalem','Başlangıç','Bitiş','Süre (Ay)','Eğri','Baz Bütçe USD','Gerçekleşme USD','Kalan USD'];
-  const progRows = [progHeader];
-  getLeafBudgetItems().sort((a,b)=>a.code.localeCompare(b.code)).forEach(b => {
-    const p = state.program[b.id] || {};
-    const months = (p.start && p.end) ? getMonthsInRange(p.start, p.end).length : '';
     const baseUsd = getBudgetItemTotalUsd(b);
+    const baseTry = getBudgetItemTotalTry(b);
     const actUsd  = getBudgetItemActualUsd(b);
-    progRows.push([b.code, b.name, p.start||'', p.end||'', months, labelCurve(p.curve||''), baseUsd, actUsd||'', null]);
+    const actTry  = getBudgetItemActualTry(b);
+    const revUsd  = b.revisedBudgetUsd != null ? b.revisedBudgetUsd : null;
+    const effUsd  = revUsd != null ? revUsd : baseUsd;
+    const effTry  = revUsd != null ? revUsd * fx : baseTry;
+    const remUsd  = effUsd - actUsd;
+    const remTry  = effTry - actTry;
+    const asilmis = actUsd > effUsd + 0.01;
+    const durum   = asilmis ? 'AŞIM' : (revUsd != null ? 'Revize' : (actUsd > 0 ? 'Normal' : ''));
+    if (revUsd != null) bHasRevise = true;
+    if (b.level === 1) { bTotBaseUsd += baseUsd; bTotBaseTry += baseTry; bTotActUsd += actUsd; bTotActTry += actTry; }
+
+    const effectiveQty = (b.qty && b.qty > 0) ? b.qty : (b.unitPrice > 0 ? 1 : null);
+    const indent = '  '.repeat(b.level - 1);
+    const row = wsBudget.addRow({
+      code: b.code,
+      level: b.level,
+      name: indent + b.name,
+      sup: b.supplier || '',
+      tip: getCategoryLabel(b.materialType),
+      qty: isLeaf && effectiveQty ? effectiveQty : null,
+      unit: isLeaf ? (b.unit || '') : '',
+      price: isLeaf ? (b.unitPrice || null) : null,
+      ccy: b.currency || 'USD',
+      baseUsd, baseTry,
+      revUsd: revUsd,
+      actUsd: actUsd > 0 ? actUsd : null,
+      actTry: actTry > 0 ? actTry : null,
+      remUsd, remTry,
+      durum
+    });
+    row.height = b.level <= 2 ? 20 : 17;
+
+    // Renk / stil
+    let bgArgb = null;
+    if (b.level === 1)      bgArgb = C.navyLight;
+    else if (b.level === 2) bgArgb = C.amberLight;
+    else if (b.level === 3) bgArgb = 'FFECF3EC';
+    if (asilmis)  bgArgb = C.redLight;
+    if (revUsd != null && !asilmis) bgArgb = 'FFFFF3CD';
+
+    row.eachCell({ includeEmpty: true }, (cell, colNo) => {
+      if (bgArgb) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgArgb } };
+      cell.font = { bold: b.level <= 2, size: b.level === 1 ? 10 : 9, name: 'Calibri',
+        color: { argb: b.level === 1 ? C.navy : C.text } };
+      cell.border = { bottom: { style: 'thin', color: { argb: C.border } } };
+      // Sayısal sütunlar sağa hizala
+      if (colNo >= 6 && colNo <= 16) cell.alignment = { horizontal: 'right' };
+      // Kalan negatifse kırmızı
+      if ((colNo === 15 || colNo === 16) && typeof cell.value === 'number' && cell.value < -0.01)
+        cell.font = { ...cell.font, color: { argb: C.red }, bold: true };
+      // Gerçekleşme yeşil
+      if ((colNo === 13 || colNo === 14) && typeof cell.value === 'number' && cell.value > 0)
+        cell.font = { ...cell.font, color: { argb: C.green } };
+    });
+
+    // Outline (açılır/kapanır)
+    row.outlineLevel = Math.max(0, b.level - 1);
   });
-  const prN = progRows.length;
-  progRows.push(['TOPLAM','','','','','',null,null,null]);
-  const progWs = XLSX.utils.aoa_to_sheet(progRows);
-  for (let i=2; i<=prN; i++) progWs[`I${i}`] = { t:'n', f:`G${i}-IF(H${i}="",0,H${i})` };
-  ['G','H','I'].forEach(col => { progWs[`${col}${prN+1}`] = { t:'n', f:`SUM(${col}2:${col}${prN})` }; });
-  progWs['!ref'] = `A1:I${prN+1}`;
-  progWs['!cols'] = [{wch:14},{wch:32},{wch:12},{wch:12},{wch:10},{wch:16},{wch:16},{wch:16},{wch:14}];
-  progWs['!freeze'] = { xSplit: 0, ySplit: 1 };
-  applyFmt(progWs, ['G','H','I'], 2, prN+1, FMT_USD);
-  XLSX.utils.book_append_sheet(wb, progWs, 'İş Programı');
 
-  // ============================================================
-  // SAYFA 8 — ÖZET
-  // ============================================================
-  const today2 = new Date().toLocaleDateString('tr-TR');
-  const leaves2 = getLeafBudgetItems();
-  const landCode = state.settings.landAccountCode || '';
-  const landUsd = landCode
-    ? leaves2.filter(b=>b.code===landCode||b.code.startsWith(landCode+'.')).reduce((s,b)=>s+getBudgetItemTotalUsd(b),0)
-    : 0;
-  const noLandUsd = overall.totalBudget - landUsd;
+  // Toplam satırı
+  const bTotRow = wsBudget.addRow({
+    code: 'TOPLAM', level: '', name: '', sup: '', tip: '', qty: null, unit: '', price: null, ccy: '',
+    baseUsd: bTotBaseUsd, baseTry: bTotBaseTry,
+    revUsd: null, actUsd: bTotActUsd > 0 ? bTotActUsd : null, actTry: bTotActTry > 0 ? bTotActTry : null,
+    remUsd: bTotBaseUsd - bTotActUsd, remTry: bTotBaseTry - bTotActTry, durum: ''
+  });
+  bTotRow.height = 22;
+  bTotRow.eachCell({ includeEmpty: true }, cell => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.navyLight } };
+    cell.font = { bold: true, size: 11, color: { argb: C.navy } };
+    cell.border = { top: { style: 'medium', color: { argb: C.navy } } };
+  });
+  wsBudget.views = [{ state: 'frozen', ySplit: 1, xSplit: 3 }];
+  wsBudget.autoFilter = { from: 'A1', to: 'Q1' };
 
-  const ozetData = [
-    ['PROJE ÖZET RAPORU', '', '', ''],
-    ['', '', '', ''],
-    ['Proje Adı', state.settings.projectName||'', '', ''],
-    ['Dönem', `${state.settings.startMonth} – ${state.settings.endMonth}`, '', ''],
-    ['İnşaat Alanı (m²)', state.settings.totalArea||0, '', ''],
-    ['Satılabilir Alan (m²)', state.settings.salableArea||0, '', ''],
-    ['USD/TRY (bugün)', fx, '', ''],
-    ['Rapor Tarihi', today2, '', ''],
-    ['', '', '', ''],
-    ['', 'USD', 'TL', ''],
-    ['ANA METRİKLER', '', '', ''],
-    ['Toplam Baz Bütçe', null, null, ''],      // B12, C12
-    ['Toplam Revize Bütçe', null, null, ''],   // B13, C13
-    ['Toplam Gerçekleşme', overall.totalActualUsd||0, null, ''],
-    ['Fiziksel İlerleme %', overall.physicalPct, '', ''],
-    ['Finansal İlerleme (USD) %', overall.financialPctUsd, '', ''],
-    ['Finansal İlerleme (TL) %', overall.financialPctTry, '', ''],
-    ['SPI', overall.spi||0, '', ''],
-    ['EAC (Tahmini Bitiş Maliyeti)', null, null, ''],
-    ['Tahmini Bitiş Tarihi', overall.etaDate ? overall.etaDate.toLocaleDateString('tr-TR') : '—', '', ''],
-    ['', '', '', ''],
-    ['', 'Bütçe USD', 'Gerç. USD', 'Gerç. %'],
-    ['KATEGORİ KIRILIMI', '', '', ''],
+  // ─────────────────────────────────────────────────────────────
+  // SAYFA 2 — FATURALAR
+  // ─────────────────────────────────────────────────────────────
+  const wsInv = wb.addWorksheet('Faturalar', { views: [{ state: 'frozen', ySplit: 1 }] });
+  wsInv.columns = [
+    { header: 'Hesap Kodu', key: 'code',    width: 16 },
+    { header: 'Fatura No',  key: 'no',      width: 16 },
+    { header: 'Cari Adı',   key: 'sup',     width: 26 },
+    { header: 'F.Tarihi',   key: 'date',    width: 12, numFmt: fmt_date },
+    { header: 'Vade',       key: 'due',     width: 12, numFmt: fmt_date },
+    { header: 'Tip',        key: 'tip',     width: 14 },
+    { header: 'Açıklama',   key: 'desc',    width: 28 },
+    { header: 'Net TL',     key: 'net',     width: 16, numFmt: fmt_tl  },
+    { header: 'KDV TL',     key: 'kdv',     width: 14, numFmt: fmt_tl  },
+    { header: 'Stopaj TL',  key: 'stop',    width: 14, numFmt: fmt_tl  },
+    { header: 'Tevkifat TL',key: 'tevk',    width: 14, numFmt: fmt_tl  },
+    { header: 'Genel Top.', key: 'grand',   width: 16, numFmt: fmt_tl  },
+    { header: 'Ödenen TL',  key: 'paid',    width: 14, numFmt: fmt_tl  },
+    { header: 'Kalan TL',   key: 'rem',     width: 14, numFmt: fmt_tl  },
+    { header: 'USD Kuru',   key: 'fx',      width: 10, numFmt: '0.0000' },
+    { header: 'Durum',      key: 'status',  width: 10 },
   ];
-  const catStartRow = ozetData.length + 1;
-  Object.keys(cats).forEach(key => {
-    const c = cats[key];
-    if (c.budgetUsd===0 && c.actualUsd===0) return;
-    ozetData.push([c.label, c.budgetUsd, c.actualUsd, null]);
+  const hdrInv = wsInv.getRow(1);
+  hdrInv.height = 24;
+  hdrInv.eachCell(cell => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.headerBg } };
+    cell.font = { bold: true, color: { argb: C.white }, size: 10 };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = { bottom: { style: 'medium', color: { argb: C.amber } } };
   });
-  ozetData.push(['', '', '', '']);
-  ozetData.push(['m² MALİYET (USD/m²)', 'Arsa Hariç', 'Arsa Dahil', '']);
-  if (state.settings.totalArea > 0) {
-    ozetData.push(['İnşaat m² Maliyeti', noLandUsd/state.settings.totalArea, overall.totalBudget/state.settings.totalArea, '']);
-  }
-  if (state.settings.salableArea > 0) {
-    ozetData.push(['Satılabilir m² Maliyeti', noLandUsd/state.settings.salableArea, overall.totalBudget/state.settings.salableArea, '']);
+
+  const sortedInv = [...state.invoices].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  sortedInv.forEach(inv => {
+    const c = calcInvoiceTotals(inv);
+    const isPaid = c.overallStatus === 'paid';
+    const row = wsInv.addRow({
+      code: inv.code || '', no: inv.invoiceNo || '', sup: inv.supplier || '',
+      date: inv.date ? new Date(inv.date) : null,
+      due:  inv.dueDate ? new Date(inv.dueDate) : null,
+      tip: getCategoryLabel(inv.type), desc: inv.desc || '',
+      net: c.net, kdv: c.kdvTotal,
+      stop: c.stopajAmount > 0 ? c.stopajAmount : null,
+      tevk: c.tevkifatAmount > 0 ? c.tevkifatAmount : null,
+      grand: c.grandTotal,
+      paid: c.totalPaid > 0 ? c.totalPaid : null,
+      rem: c.remaining,
+      fx: inv.fxRate || null,
+      status: isPaid ? 'Ödendi' : (c.overallStatus === 'partial' ? 'Kısmi' : 'Bekliyor')
+    });
+    row.height = 17;
+    const bgArgb = isPaid ? C.greenLight : (c.overallStatus === 'partial' ? 'FFFFF3CD' : C.surface);
+    row.eachCell({ includeEmpty: true }, (cell, colNo) => {
+      if (bgArgb !== C.surface) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgArgb } };
+      cell.font = { size: 9 };
+      cell.border = { bottom: { style: 'thin', color: { argb: C.border } } };
+      if (colNo >= 8 && colNo <= 15) cell.alignment = { horizontal: 'right' };
+    });
+    // Kalan kırmızı
+    if (c.remaining > 0.01) {
+      const remCell = row.getCell(14);
+      remCell.font = { size: 9, color: { argb: C.red }, bold: true };
+    }
+  });
+  wsInv.autoFilter = { from: 'A1', to: 'P1' };
+
+  // ─────────────────────────────────────────────────────────────
+  // SAYFA 3 — ÖDEME PLANI
+  // ─────────────────────────────────────────────────────────────
+  const wsPay = wb.addWorksheet('Ödeme Planı', { views: [{ state: 'frozen', ySplit: 1 }] });
+  wsPay.columns = [
+    { header: 'Fatura No',     key: 'no',    width: 16 },
+    { header: 'Cari',          key: 'sup',   width: 24 },
+    { header: 'Taksit #',      key: 'idx',   width: 8  },
+    { header: 'Vade',          key: 'due',   width: 12, numFmt: fmt_date },
+    { header: 'Taksit TL',     key: 'amt',   width: 16, numFmt: fmt_tl },
+    { header: 'Ödenen TL',     key: 'paid',  width: 16, numFmt: fmt_tl },
+    { header: 'Kalan TL',      key: 'rem',   width: 16, numFmt: fmt_tl },
+    { header: 'Ödeme Tarihi',  key: 'pDate', width: 14, numFmt: fmt_date },
+    { header: 'Durum',         key: 'stat',  width: 10 },
+  ];
+  const hdrPay = wsPay.getRow(1);
+  hdrPay.height = 24;
+  hdrPay.eachCell(cell => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.headerBg } };
+    cell.font = { bold: true, color: { argb: C.white }, size: 10 };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = { bottom: { style: 'medium', color: { argb: C.amber } } };
+  });
+  sortedInv.forEach(inv => {
+    const c = calcInvoiceTotals(inv);
+    c.installments.forEach((inst, i) => {
+      const paid = inst.status === 'paid';
+      const row = wsPay.addRow({
+        no: inv.invoiceNo || inv.id, sup: inv.supplier || '',
+        idx: i + 1,
+        due: inst.dueDate ? new Date(inst.dueDate) : null,
+        amt: inst.amount || 0,
+        paid: inst.paidAmount || 0,
+        rem: (inst.amount || 0) - (inst.paidAmount || 0),
+        pDate: inst.paidDate ? new Date(inst.paidDate) : null,
+        stat: paid ? 'Ödendi' : 'Bekliyor'
+      });
+      row.height = 17;
+      const bg = paid ? C.greenLight : C.surface;
+      row.eachCell({ includeEmpty: true }, (cell, colNo) => {
+        if (bg !== C.surface) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+        cell.font = { size: 9 };
+        cell.border = { bottom: { style: 'thin', color: { argb: C.border } } };
+        if (colNo >= 5 && colNo <= 7) cell.alignment = { horizontal: 'right' };
+      });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // SAYFA 4 — NAKİT AKIŞ
+  // ─────────────────────────────────────────────────────────────
+  const wsCf = wb.addWorksheet('Nakit Akış', { views: [{ state: 'frozen', ySplit: 2, xSplit: 1 }] });
+  // Çift başlık satırı
+  wsCf.mergeCells('A1:A2'); wsCf.getCell('A1').value = 'Dönem';
+  wsCf.mergeCells('B1:B2'); wsCf.getCell('B1').value = 'USD/TRY';
+  wsCf.mergeCells('C1:D1'); wsCf.getCell('C1').value = 'Plan Harcama';
+  wsCf.mergeCells('E1:F1'); wsCf.getCell('E1').value = 'Gerç. Harcama';
+  wsCf.mergeCells('G1:H1'); wsCf.getCell('G1').value = 'Plan Tahsilat';
+  wsCf.mergeCells('I1:J1'); wsCf.getCell('I1').value = 'Gerç. Tahsilat';
+  wsCf.mergeCells('K1:L1'); wsCf.getCell('K1').value = 'Net Akış';
+  wsCf.mergeCells('M1:N1'); wsCf.getCell('M1').value = 'Kümülatif Finansman';
+  ['C2','E2','G2','I2','K2','M2'].forEach(addr => { wsCf.getCell(addr).value = 'TL'; });
+  ['D2','F2','H2','J2','L2','N2'].forEach(addr => { wsCf.getCell(addr).value = 'USD'; });
+  wsCf.columns = [
+    {key:'mon',width:12},{key:'fx',width:9,numFmt:'0.00'},
+    {key:'planTry',width:16,numFmt:fmt_tl},{key:'planUsd',width:14,numFmt:fmt_usd},
+    {key:'actTry',width:16,numFmt:fmt_tl},{key:'actUsd',width:14,numFmt:fmt_usd},
+    {key:'colPlanTry',width:16,numFmt:fmt_tl},{key:'colPlanUsd',width:14,numFmt:fmt_usd},
+    {key:'colActTry',width:16,numFmt:fmt_tl},{key:'colActUsd',width:14,numFmt:fmt_usd},
+    {key:'netTry',width:14,numFmt:fmt_tl},{key:'netUsd',width:14,numFmt:fmt_usd},
+    {key:'cumTry',width:18,numFmt:fmt_tl},{key:'cumUsd',width:16,numFmt:fmt_usd},
+  ];
+  // Başlık stilleri
+  for (let r = 1; r <= 2; r++) {
+    wsCf.getRow(r).height = r === 1 ? 22 : 18;
+    wsCf.getRow(r).eachCell({ includeEmpty: false }, cell => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.headerBg } };
+      cell.font = { bold: true, color: { argb: C.white }, size: r === 1 ? 10 : 9 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = { bottom: { style: r === 2 ? 'medium' : 'thin', color: { argb: C.amber } } };
+    });
   }
 
-  const ozetWs = XLSX.utils.aoa_to_sheet(ozetData);
-  // Bütçe sayfasına bağlantılı formüller
-  const bTotRow = sortedBudget.length + 2;
-  ozetWs['B12'] = { t:'n', f:`Bütçe!J${bTotRow}` };  // Baz Bütçe USD
-  ozetWs['C12'] = { t:'n', f:`Bütçe!K${bTotRow}` };  // Baz Bütçe TL
-  ozetWs['B13'] = { t:'n', f:`IFERROR(Bütçe!L${bTotRow}, Bütçe!J${bTotRow})` }; // Revize
-  ozetWs['C13'] = { t:'n', f:`B13*${fx}` };
-  ozetWs['C14'] = { t:'n', f:`B14*${fx}` };           // Gerçekleşme TL
-  ozetWs['B19'] = { t:'n', f:`IFERROR(B12/B18,B12)` }; // EAC
-  ozetWs['C19'] = { t:'n', f:`B19*${fx}` };
-  // Kategori % formülleri
-  let catR = catStartRow;
-  Object.keys(cats).forEach((key, i) => {
-    const c = cats[key];
-    if (c.budgetUsd===0 && c.actualUsd===0) return;
-    ozetWs[`D${catR}`] = { t:'n', f:`IFERROR(C${catR}/B${catR}*100,0)` };
-    catR++;
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+  cf.forEach(row => {
+    const isCurrent = row.month === todayKey;
+    const isPast = row.month < todayKey;
+    const exRow = wsCf.addRow({
+      mon: fmtMonth(row.month), fx: row.fx,
+      planTry: row.planTry || null, planUsd: row.planUsd || null,
+      actTry: row.actualTry || null, actUsd: row.actualUsd || null,
+      colPlanTry: row.collectionPlanTry || null, colPlanUsd: row.collectionPlanUsd || null,
+      colActTry: row.collectionActualTry || null, colActUsd: row.collectionActualUsd || null,
+      netTry: row.netTry, netUsd: row.netUsd,
+      cumTry: row.cumulativeTry, cumUsd: row.cumulativeUsd
+    });
+    exRow.height = 16;
+    const bg = isCurrent ? 'FFFFF8EC' : (isPast ? 'FFF9F7F2' : C.surface);
+    exRow.eachCell({ includeEmpty: true }, (cell, colNo) => {
+      if (bg !== C.surface) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+      cell.font = { size: 9, bold: isCurrent };
+      cell.border = { bottom: { style: 'thin', color: { argb: C.border } } };
+      if (colNo >= 2) cell.alignment = { horizontal: 'right' };
+      // Negatif kırmızı, pozitif yeşil (net ve kümülatif sütunlar)
+      if (colNo >= 11 && typeof cell.value === 'number') {
+        cell.font = { ...cell.font, color: { argb: cell.value < -0.01 ? C.red : (cell.value > 0.01 ? C.green : C.muted) } };
+      }
+    });
   });
-  ozetWs['!cols'] = [{wch:34},{wch:18},{wch:18},{wch:12}];
-  applyFmt(ozetWs, ['B','C'], 12, 14, FMT_USD);
-  applyFmt(ozetWs, ['C'], 12, 14, FMT_TL);
-  applyFmt(ozetWs, ['B'], 15, 17, FMT_PCT);
-  XLSX.utils.book_append_sheet(wb, ozetWs, 'Özet');
 
-  // İndir
-  const projName = (state.settings.projectName||'proje').replace(/\s+/g,'_');
-  const dateStr = new Date().toISOString().substring(0,10);
-  XLSX.writeFile(wb, `${projName}_${dateStr}.xlsx`);
+  // ─────────────────────────────────────────────────────────────
+  // SAYFA 5 — İŞ PROGRAMI
+  // ─────────────────────────────────────────────────────────────
+  const wsProg = wb.addWorksheet('İş Programı', { views: [{ state: 'frozen', ySplit: 1, xSplit: 2 }] });
+  wsProg.columns = [
+    { header: 'Kod',          key: 'code',  width: 16 },
+    { header: 'Kalem',        key: 'name',  width: 36 },
+    { header: 'Başlangıç',    key: 'start', width: 14 },
+    { header: 'Bitiş',        key: 'end',   width: 14 },
+    { header: 'Süre (Ay)',    key: 'dur',   width: 10 },
+    { header: 'Eğri',         key: 'curve', width: 16 },
+    { header: 'Bütçe USD',    key: 'busd',  width: 16, numFmt: fmt_usd },
+    { header: 'Bütçe TL',     key: 'btry',  width: 18, numFmt: fmt_tl  },
+    { header: 'Gerç. USD',    key: 'ausd',  width: 14, numFmt: fmt_usd },
+    { header: 'Kalan USD',    key: 'rusd',  width: 14, numFmt: fmt_usd },
+  ];
+  const hdrProg = wsProg.getRow(1);
+  hdrProg.height = 24;
+  hdrProg.eachCell(cell => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.headerBg } };
+    cell.font = { bold: true, color: { argb: C.white }, size: 10 };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = { bottom: { style: 'medium', color: { argb: C.amber } } };
+  });
+
+  const allBudgetItems = [...state.budget].sort((a,b) => a.code.localeCompare(b.code));
+  allBudgetItems.forEach(b => {
+    const isLevel1 = b.level === 1;
+    const isLeaf = isBudgetLeaf(b);
+    let prog;
+    if (isLevel1 || !isLeaf) {
+      prog = getDerivedProgramRange(b) || {};
+    } else {
+      prog = state.program[b.id] || {};
+    }
+    const months = (prog.start && prog.end) ? getMonthsInRange(prog.start, prog.end).length : null;
+    const busd = getBudgetItemTotalUsd(b);
+    const btry = getBudgetItemTotalTry(b);
+    const ausd = getBudgetItemActualUsd(b);
+    const indent = '  '.repeat(b.level - 1);
+    const row = wsProg.addRow({
+      code: b.code, name: indent + b.name,
+      start: prog.start ? fmtMonth(prog.start) : (isLevel1 ? '↑ alt kalemler' : '—'),
+      end:   prog.end   ? fmtMonth(prog.end)   : '—',
+      dur: months, curve: (!isLevel1 && isLeaf && prog.curve) ? labelCurve(prog.curve) : '—',
+      busd, btry, ausd: ausd > 0 ? ausd : null, rusd: busd - ausd
+    });
+    row.height = b.level <= 2 ? 19 : 16;
+    const bg = b.level === 1 ? C.navyLight : (b.level === 2 ? C.amberLight : C.surface);
+    row.eachCell({ includeEmpty: true }, (cell, colNo) => {
+      if (bg !== C.surface) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+      cell.font = { bold: b.level <= 2, size: b.level === 1 ? 10 : 9, color: { argb: b.level === 1 ? C.navy : C.text } };
+      cell.border = { bottom: { style: 'thin', color: { argb: C.border } } };
+      if (colNo >= 5) cell.alignment = { horizontal: 'right' };
+    });
+    row.outlineLevel = Math.max(0, b.level - 1);
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // SAYFA 6 — ÖZET
+  // ─────────────────────────────────────────────────────────────
+  const wsOzet = wb.addWorksheet('Özet');
+  wsOzet.columns = [{ key: 'k', width: 36 }, { key: 'v1', width: 20 }, { key: 'v2', width: 20 }];
+
+  const addOzetTitle = (text) => {
+    const row = wsOzet.addRow([text]);
+    row.getCell(1).font = { bold: true, size: 12, color: { argb: C.white } };
+    row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.headerBg } };
+    row.height = 22;
+    wsOzet.mergeCells(`A${row.number}:C${row.number}`);
+  };
+  const addOzetRow = (label, val1, val2, fmt1, fmt2) => {
+    const row = wsOzet.addRow([label, val1, val2]);
+    row.height = 18;
+    row.getCell(1).font = { size: 10 };
+    row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.bg } };
+    if (typeof val1 === 'number' && fmt1) row.getCell(2).numFmt = fmt1;
+    if (typeof val2 === 'number' && fmt2) row.getCell(3).numFmt = fmt2;
+    row.getCell(2).alignment = { horizontal: 'right' };
+    row.getCell(3).alignment = { horizontal: 'right' };
+    row.getCell(2).font = { bold: true, size: 10, color: { argb: C.navy } };
+    row.getCell(3).font = { size: 10, color: { argb: C.amber } };
+    row.eachCell(cell => { cell.border = { bottom: { style: 'thin', color: { argb: C.border } } }; });
+  };
+
+  const dateStr2 = new Date().toLocaleDateString('tr-TR');
+  wsOzet.addRow([]);
+  addOzetTitle(`📊 ${projName} — Proje Özet Raporu`);
+  wsOzet.addRow(['Rapor Tarihi:', dateStr2]);
+  wsOzet.addRow(['Dönem:', `${state.settings.startMonth} – ${state.settings.endMonth}`]);
+  wsOzet.addRow([]);
+  addOzetTitle('Ana Metrikler');
+  addOzetRow('Toplam Baz Bütçe',      overall.totalBudget, overall.totalBudgetTry, fmt_usd, fmt_tl);
+  addOzetRow('Toplam Gerçekleşme',    overall.totalActualUsd, overall.totalActualTry, fmt_usd, fmt_tl);
+  addOzetRow('Fiziksel İlerleme %',   overall.physicalPct, null, fmt_pct, null);
+  addOzetRow('Finansal İlerleme %',   overall.financialPctUsd, overall.financialPctTry, fmt_pct, fmt_pct);
+  addOzetRow('EAC',                   overall.eac, overall.eacTry || overall.eac * fx, fmt_usd, fmt_tl);
+  wsOzet.addRow([]);
+  addOzetTitle('Kategori Kırılımı');
+  const hdrCat = wsOzet.addRow(['Kategori', 'Bütçe USD', 'Gerç. USD', 'Gerç. %']);
+  hdrCat.eachCell(cell => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.navyLight } };
+    cell.font = { bold: true, size: 10, color: { argb: C.navy } };
+  });
+  const cats = computeCategoryBreakdown();
+  Object.keys(cats).forEach(k => {
+    const c = cats[k];
+    if (c.budgetUsd === 0 && c.actualUsd === 0) return;
+    const pct = c.budgetUsd > 0 ? (c.actualUsd / c.budgetUsd) * 100 : 0;
+    const row = wsOzet.addRow([c.label, c.budgetUsd, c.actualUsd, pct]);
+    row.getCell(2).numFmt = fmt_usd;
+    row.getCell(3).numFmt = fmt_usd;
+    row.getCell(4).numFmt = fmt_pct;
+    row.eachCell(cell => { cell.font = { size: 10 }; cell.border = { bottom: { style: 'thin', color: { argb: C.border } } }; });
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // İNDİR
+  // ─────────────────────────────────────────────────────────────
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const pName = (state.settings.projectName || 'proje').replace(/\s+/g, '_');
+  const dStr = new Date().toISOString().substring(0, 10);
+  a.download = `${pName}_${dStr}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
+
   
 
 function exportBudgetCsv() {
