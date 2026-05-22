@@ -2203,13 +2203,18 @@ function normalizeApp(a) {
 async function loadApp() {
   // Firebase veya localStorage'dan yükle
   let localData = null;
+  let loadError = false;
+
   try {
     const result = await persistentStorage.get(APP_KEY);
     if (result && result.value) localData = JSON.parse(result.value);
-  } catch (e) { /* yok */ }
-  
+  } catch (e) {
+    console.warn('Veri yüklenemedi:', e);
+    loadError = true;
+  }
+
   // Eski format kontrolü (kita_bulvar_v0)
-  if (!localData) {
+  if (!localData && !loadError) {
     try {
       const oldRes = await persistentStorage.get('kita_bulvar_v0');
       if (oldRes && oldRes.value) {
@@ -2220,14 +2225,28 @@ async function loadApp() {
       }
     } catch (e) { /* yok */ }
   }
-  
+
   if (localData) {
     app = normalizeApp(localData);
     loadActiveProject();
     return;
   }
-  
-  // İlk açılış — boş proje oluştur
+
+  // Firebase bağlantı hatası varsa — veriyi silme, hata göster
+  if (loadError) {
+    document.body.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f8f6f0;">
+        <div style="text-align:center;max-width:400px;padding:40px;background:white;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,0.1);">
+          <div style="font-size:48px;margin-bottom:16px;">⚠️</div>
+          <h2 style="margin:0 0 12px;color:#1e3a5f;">Firebase Bağlantı Hatası</h2>
+          <p style="color:#666;margin-bottom:24px;">Veriler yüklenemedi. İnternet bağlantını kontrol et ve sayfayı yenile.</p>
+          <button onclick="location.reload()" style="background:#1e3a5f;color:white;border:none;padding:12px 24px;border-radius:8px;font-size:14px;cursor:pointer;">🔄 Yeniden Dene</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // Gerçekten ilk açılış (Firebase'de hiç veri yok) — yeni proje oluştur
   app = normalizeApp(JSON.parse(JSON.stringify(DEFAULT_APP)));
   const firstId = 'p_' + Date.now();
   const firstProject = JSON.parse(JSON.stringify(DEFAULT_PROJECT));
@@ -3242,8 +3261,21 @@ function getFxForDate(dateStr) {
 }
 
 function getFxFromQuarterlyFallback(date) {
-  const m = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-  return getFxForMonth(m);
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1;
+  const q = Math.ceil(m / 3);
+  const qKey = `${y}-Q${q}`;
+  const proj = state.settings.fxProjection || [];
+  const found = proj.find(f => f.quarter === qKey);
+  if (found) return found.rate;
+  // En yakın çeyreği bul
+  if (proj.length === 0) return 38.5;
+  // Gelecekteyse son değeri, geçmişteyse ilk değeri al
+  const last = proj[proj.length - 1];
+  const first = proj[0];
+  if (qKey > last.quarter) return last.rate;
+  if (qKey < first.quarter) return first.rate;
+  return last.rate;
 }
 
 function renderKpis() {
@@ -4925,28 +4957,36 @@ async function importData(event) {
     if (imported.meta && imported.projects) {
       // Yeni format — tüm app'i değiştir
       if (!confirm('Bu yedek TÜM projeleri içeriyor.\n\nMevcut veri (' + app.meta.projectList.length + ' proje) tamamen değiştirilecek.\n\nDevam edilsin mi?')) return;
-      app = normalizeApp(imported);
+      // Her projeye migration uygula (shallow — stack overflow'u önlemek için döngüsel referans kontrolsüz)
+      const safeApp = {
+        meta: { ...DEFAULT_APP.meta, ...imported.meta },
+        projects: {}
+      };
+      Object.keys(imported.projects || {}).forEach(pid => {
+        const p = imported.projects[pid];
+        safeApp.projects[pid] = applyProjectMigrations(JSON.parse(JSON.stringify(p)));
+      });
+      app = safeApp;
       loadActiveProject();
       await saveApp();
       renderAll();
-      alert('✓ Yedek yüklendi (' + app.meta.projectList.length + ' proje)');
+      alert('✓ Yedek yüklendi (' + Object.keys(safeApp.projects).length + ' proje)');
     } else {
-      // Eski format — tek proje, aktif projeye yaz veya yeni proje olarak ekle
+      // Eski format — tek proje
       if (!confirm('Bu yedek tek proje formatında.\n\n[Tamam] Yeni proje olarak ekle\n[İptal] İptal')) return;
       const newId = 'p_' + Date.now();
-      applyProjectMigrations(imported);
-      imported.lastModified = Date.now();
-      // Şifre hash'lerini settings'ten çıkar (eski sürüm artefaktı)
-      if (imported.settings) {
-        delete imported.settings.adminPasswordHash;
-        delete imported.settings.editPasswordHash;
-        delete imported.settings.passwordPromptShown;
+      const safeP = applyProjectMigrations(JSON.parse(JSON.stringify(imported)));
+      safeP.lastModified = Date.now();
+      if (safeP.settings) {
+        delete safeP.settings.adminPasswordHash;
+        delete safeP.settings.editPasswordHash;
+        delete safeP.settings.passwordPromptShown;
       }
-      const name = (imported.settings && imported.settings.projectName) || 'İçe Aktarılan Proje';
-      app.projects[newId] = imported;
+      const name = (safeP.settings && safeP.settings.projectName) || 'İçe Aktarılan Proje';
+      app.projects[newId] = safeP;
       app.meta.projectList.push({ id: newId, name, createdAt: Date.now(), lastModified: Date.now() });
       app.meta.activeProjectId = newId;
-      state = imported;
+      state = safeP;
       await saveApp();
       renderAll();
       alert('✓ "' + name + '" projesi eklendi ve aktif edildi');
