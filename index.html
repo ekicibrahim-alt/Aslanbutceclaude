@@ -1601,8 +1601,8 @@ body.view-mode .lock-status * {
     <h3 class="modal-title">Kalem Zamanlaması</h3>
     <p id="pm-itemName" style="color: var(--text-muted); margin-bottom: 16px;"></p>
     <div class="form-row form-row-2">
-      <div class="form-field"><label>Başlangıç</label><input type="month" id="pm-start"></div>
-      <div class="form-field"><label>Bitiş</label><input type="month" id="pm-end"></div>
+      <div class="form-field"><label>Başlangıç Tarihi</label><input type="date" id="pm-start"></div>
+      <div class="form-field"><label>Bitiş Tarihi</label><input type="date" id="pm-end"></div>
     </div>
     <div class="form-row">
       <div class="form-field"><label>Yayılım Eğrisi</label>
@@ -1653,22 +1653,22 @@ const DEFAULT_PROJECT = {
       { key: 'hataliIsler', label: 'Hatalı İşler' }
     ],
     fxProjection: [
-      { quarter: '2026-Q1', rate: 42.50 },
-      { quarter: '2026-Q2', rate: 45.00 },
-      { quarter: '2026-Q3', rate: 47.50 },
-      { quarter: '2026-Q4', rate: 50.00 },
-      { quarter: '2027-Q1', rate: 52.50 },
-      { quarter: '2027-Q2', rate: 55.00 },
-      { quarter: '2027-Q3', rate: 57.00 },
-      { quarter: '2027-Q4', rate: 59.00 },
-      { quarter: '2028-Q1', rate: 60.50 },
-      { quarter: '2028-Q2', rate: 62.00 },
-      { quarter: '2028-Q3', rate: 63.50 },
-      { quarter: '2028-Q4', rate: 65.00 },
-      { quarter: '2029-Q1', rate: 65.50 },
-      { quarter: '2029-Q2', rate: 66.00 },
-      { quarter: '2029-Q3', rate: 66.25 },
-      { quarter: '2029-Q4', rate: 66.50 },
+      { quarter: '2026-Q1', rate: 36.50 },  // Gerçekleşti — ortalama
+      { quarter: '2026-Q2', rate: 38.50 },  // Mayıs 2026 ~38-39, Q2 tahmini
+      { quarter: '2026-Q3', rate: 41.00 },  // Tahmin
+      { quarter: '2026-Q4', rate: 44.00 },  // Tahmin
+      { quarter: '2027-Q1', rate: 47.00 },  // Tahmin
+      { quarter: '2027-Q2', rate: 50.00 },  // Tahmin
+      { quarter: '2027-Q3', rate: 53.00 },  // Tahmin
+      { quarter: '2027-Q4', rate: 56.00 },  // Tahmin
+      { quarter: '2028-Q1', rate: 59.00 },  // Tahmin
+      { quarter: '2028-Q2', rate: 62.00 },  // Tahmin
+      { quarter: '2028-Q3', rate: 65.00 },  // Tahmin
+      { quarter: '2028-Q4', rate: 68.00 },  // Tahmin
+      { quarter: '2029-Q1', rate: 71.00 },  // Tahmin
+      { quarter: '2029-Q2', rate: 74.00 },  // Tahmin
+      { quarter: '2029-Q3', rate: 77.00 },  // Tahmin
+      { quarter: '2029-Q4', rate: 80.00 },  // Tahmin
     ],
     dailyFx: []
   },
@@ -2124,6 +2124,16 @@ function applyProjectMigrations(p) {
     return c;
   });
   p.invoices = p.invoices.map(i => ({ ...i, type: i.type || 'material' }));
+  p.budget = (p.budget || []).map(b => ({ ...b, currency: b.currency || 'USD' }));
+  // Eski varsayılan kur projeksiyonu varsa yeni tahminlerle güncelle
+  // (Q1 2026'da 42.5 olan eski değer bırakılmışsa güncelle)
+  if (p.settings.fxProjection && p.settings.fxProjection.length > 0) {
+    const firstRate = p.settings.fxProjection[0].rate;
+    if (firstRate === 42.50 || firstRate === 45.00) {
+      // Eski default değerler — yeni tahminlerle değiştir
+      p.settings.fxProjection = JSON.parse(JSON.stringify(DEFAULT_PROJECT.settings.fxProjection));
+    }
+  }
   return p;
 }
 
@@ -2581,8 +2591,11 @@ function fmtDate(d) {
 }
 function fmtMonth(m) {
   if (!m) return '—';
-  const [y, mo] = m.split('-');
-  return `${mo}/${y}`;
+  const ym = m.substring(0, 7); // YYYY-MM-DD veya YYYY-MM → YYYY-MM
+  const [y, mo] = ym.split('-');
+  const monthNames = ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
+  const dayPart = m.length > 7 ? '.' + m.substring(8, 10) : '';
+  return `${dayPart ? m.substring(8,10) + ' ' : ''}${monthNames[parseInt(mo)-1]} ${y}`;
 }
 
 function quarterOfMonth(m) {
@@ -2597,11 +2610,20 @@ function getFxForMonth(m) {
   return found ? found.rate : (state.settings.fxProjection[state.settings.fxProjection.length - 1]?.rate || 45);
 }
 
+function toYearMonth(d) {
+  // YYYY-MM-DD veya YYYY-MM → YYYY-MM döndür
+  if (!d) return '';
+  return d.substring(0, 7);
+}
+
 function getMonthsInRange(startM, endM) {
-  if (!startM || !endM) return [];
+  // Gün bazlı tarihleri ay'a indir
+  const s = toYearMonth(startM);
+  const e = toYearMonth(endM);
+  if (!s || !e) return [];
   const months = [];
-  const [sy, sm] = startM.split('-').map(Number);
-  const [ey, em] = endM.split('-').map(Number);
+  const [sy, sm] = s.split('-').map(Number);
+  const [ey, em] = e.split('-').map(Number);
   let y = sy, mo = sm;
   while (y < ey || (y === ey && mo <= em)) {
     months.push(`${y}-${String(mo).padStart(2, '0')}`);
@@ -2709,20 +2731,38 @@ function getLeafItemUsd(b) {
 function getLeafItemTry(b) {
   const qty = (b.qty && b.qty > 0) ? b.qty : (b.unitPrice > 0 ? 1 : 0);
   const total = qty * (b.unitPrice || 0);
+  
+  // TRY olarak girilmişse direkt TL değer (kur dönüşümü yok)
   if (b.currency === 'TRY') return total;
-  return total * getBudgetItemFx(b);
+  
+  // USD olarak girilmiş — iş programı varsa ağırlıklı ortalama kur, yoksa bugünkü kur
+  const prog = state.program[b.id];
+  if (prog && prog.start && prog.end) {
+    const months = getMonthsInRange(prog.start, prog.end);
+    if (months.length > 0) {
+      // Her aya düşen USD miktarını bul, o ayın kuruyla çarp
+      const dist = distributeOverCurve(total, months.length, prog.curve || 'linear');
+      const totalTry = months.reduce((sum, m, i) => {
+        return sum + dist[i] * getFxForMonth(m);
+      }, 0);
+      return totalTry;
+    }
+  }
+  // İş programı yok → bugünkü kur
+  return total * getCurrentFx();
 }
 
-// Bütçe kalemi için referans FX kuru
+// Bütçe kalemi için referans FX kuru (tek değer — özet/karşılaştırma için)
 function getBudgetItemFx(b) {
+  // İş programı varsa başlangıç ayının kuru
   const prog = state.program[b.id];
-  if (prog && prog.start) return getFxForMonth(prog.start);
+  if (prog && prog.start) return getFxForMonth(toYearMonth(prog.start));
   // Yaprak değilse alt kalemlerin programlarına bak
   if (!isBudgetLeaf(b)) {
     const leaves = getDescendantLeaves(b);
     for (const leaf of leaves) {
       const p = state.program[leaf.id];
-      if (p && p.start) return getFxForMonth(p.start);
+      if (p && p.start) return getFxForMonth(toYearMonth(p.start));
     }
   }
   return getCurrentFx();
@@ -4758,8 +4798,14 @@ function openProgramModal(itemId) {
   const b = state.budget.find(x => x.id === itemId);
   const prog = state.program[itemId] || {};
   document.getElementById('pm-itemName').textContent = `${b.code} — ${b.name}`;
-  document.getElementById('pm-start').value = prog.start || '';
-  document.getElementById('pm-end').value = prog.end || '';
+  // Eski YYYY-MM formatını YYYY-MM-01 (ay başı) olarak göster
+  const toDate = v => {
+    if (!v) return '';
+    if (v.length === 7) return v + '-01'; // YYYY-MM → YYYY-MM-01
+    return v; // zaten YYYY-MM-DD
+  };
+  document.getElementById('pm-start').value = toDate(prog.start);
+  document.getElementById('pm-end').value = toDate(prog.end);
   document.getElementById('pm-curve').value = prog.curve || 's-curve';
   document.getElementById('programModal').classList.add('active');
 }
