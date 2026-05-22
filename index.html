@@ -3508,6 +3508,7 @@ function renderBudgetTable() {
   const sorted = [...state.budget].sort((a, b) => a.code.localeCompare(b.code));
   const fx = getCurrentFx();
   let totalBaseUsd=0, totalBaseTry=0, totalRevUsd=0, totalRevTry=0;
+  let hasAnyRevise = false; // gerçekten revize girilmiş kalem var mı?
   let totalActUsd=0, totalActTry=0, totalRemUsd=0, totalRemTry=0;
 
   sorted.forEach(b => {
@@ -3526,6 +3527,7 @@ function renderBudgetTable() {
     if (b.level === 1) {
       totalBaseUsd += baseUsd; totalBaseTry += baseTry;
       const revE = revUsd != null ? revUsd : baseUsd;
+      if (revUsd != null) hasAnyRevise = true;
       totalRevUsd += revE; totalRevTry += revE * fx;
       totalActUsd += actUsd; totalActTry += actTry;
       totalRemUsd += remUsd; totalRemTry += remTry;
@@ -3605,8 +3607,8 @@ function renderBudgetTable() {
       <td colspan="7" style="font-weight:700;">PROJE TOPLAMI</td>
       <td class="right">${fmtUSD(totalBaseUsd)}</td>
       <td class="right" style="color:var(--text-muted);">${fmtTL(totalBaseTry)}</td>
-      <td class="right" style="background:rgba(184,134,61,0.04);color:var(--accent);">${totalRevUsd!==totalBaseUsd?fmtUSD(totalRevUsd):'—'}</td>
-      <td class="right" style="background:rgba(184,134,61,0.04);color:var(--accent);">${totalRevTry!==totalBaseTry?fmtTL(totalRevTry):'—'}</td>
+      <td class="right" style="background:rgba(184,134,61,0.04);color:var(--accent);">${hasAnyRevise ? fmtUSD(totalRevUsd) : '—'}</td>
+      <td class="right" style="background:rgba(184,134,61,0.04);color:var(--accent);">${hasAnyRevise ? fmtTL(totalRevTry) : '—'}</td>
       <td class="right" style="color:#2f6b48;">${totalActUsd>0?fmtUSD(totalActUsd):'—'}</td>
       <td class="right" style="color:#2f6b48;">${totalActTry>0?fmtTL(totalActTry):'—'}</td>
       <td class="right" style="${totRemUsd<0?'color:#a44132;font-weight:700;':''}">${fmtUSD(totRemUsd)}</td>
