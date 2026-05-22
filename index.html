@@ -2605,9 +2605,11 @@ function quarterOfMonth(m) {
 }
 
 function getFxForMonth(m) {
-  const q = quarterOfMonth(m);
-  const found = state.settings.fxProjection.find(f => f.quarter === q);
-  return found ? found.rate : (state.settings.fxProjection[state.settings.fxProjection.length - 1]?.rate || 45);
+  // m = 'YYYY-MM' veya 'YYYY-MM-DD'
+  const ym = toYearMonth(m) || m;
+  // Önce günlük kur tablosuna bak — o ayın 15'ini baz al (ortası)
+  const midDate = ym + '-15';
+  return getFxForDate(midDate);
 }
 
 function toYearMonth(d) {
