@@ -3599,8 +3599,8 @@ function renderBudgetTable() {
   });
 
   if (sorted.length > 0) {
-    const totRemUsd = totalRevUsd - totalActUsd;
-    const totRemTry = totalRevTry - totalActTry;
+    const totRemUsd = (hasAnyRevise ? totalRevUsd : totalBaseUsd) - totalActUsd;
+    const totRemTry = (hasAnyRevise ? totalRevTry : totalBaseTry) - totalActTry;
     const tr = document.createElement('tr');
     tr.style.cssText = 'font-weight:700;border-top:2px solid var(--border-strong);background:var(--surface-2);';
     tr.innerHTML = `
