@@ -5557,26 +5557,82 @@ async function importXlsx(event) {
     
     // 2) FATURALAR
     if (wb.SheetNames.includes('Faturalar')) {
-      const rows = XLSX.utils.sheet_to_json(wb.Sheets['Faturalar'], { header: 1 });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets['Faturalar'], { header: 1, raw: false });
+      const rawRows = XLSX.utils.sheet_to_json(wb.Sheets['Faturalar'], { header: 1, raw: true });
       const newInvoices = [];
       for (let i = 1; i < rows.length; i++) {
-        const r = rows[i];
-        if (!r[0] || !r[2]) continue;
-        const idCol = r[12];
-        const oldInv = state.invoices.find(x => x.id === idCol);
+        const r = rows[i];   // string olarak
+        const rr = rawRows[i]; // raw değerler
+        if (!r || (!r[0] && !r[1])) continue;
+        if (String(r[0] || '').toUpperCase().includes('TOPLAM')) continue;
+
+        // Yeni sütun sırası (ExcelJS export): 
+        // 0=Hesap Kodu 1=Fatura No 2=Cari Adı 3=F.Tarihi 4=Vade 5=Tip 6=Açıklama
+        // 7=Net TL 8=KDV TL 9=Stopaj 10=Tevkifat 11=Genel Top. 12=Ödenen 13=Kalan 14=USD Kuru 15=Durum
+        // Eski sütun sırası (SheetJS export):
+        // 0=F.Tarihi 1=Vade 2=Cari 3=Hesap Kodu 4=Tip 5=Açıklama...
+        
+        // Hangi format? İlk sütunun değerine bakarak anla
+        let isNewFormat = false;
+        const firstVal = String(r[0] || '').trim();
+        // Yeni format: ilk sütun hesap kodu (sayı değil, harf veya boş)
+        // Eski format: ilk sütun tarih (YYYY-MM-DD gibi)
+        if (firstVal && !firstVal.match(/^\d{4}-\d{2}/)) isNewFormat = true;
+        
+        let code, invoiceNo, supplier, dateStr, dueStr, tipStr, desc, net, fx, durum, idCol;
+        
+        if (isNewFormat) {
+          code      = String(rr[0] != null ? rr[0] : '').trim();
+          invoiceNo = String(r[1] || '').trim();
+          supplier  = String(r[2] || '').trim();
+          dateStr   = toDate(rr[3]);
+          dueStr    = toDate(rr[4]);
+          tipStr    = String(r[5] || '').trim();
+          desc      = String(r[6] || '').trim();
+          net       = parseDecimal(r[7]);
+          fx        = parseDecimal(r[14]);
+          durum     = String(r[15] || '').trim();
+          idCol     = null; // ExcelJS export'ta ID yok
+        } else {
+          // Eski SheetJS formatı
+          dateStr   = toDate(rr[0]);
+          dueStr    = toDate(rr[1]);
+          supplier  = String(r[2] || '').trim();
+          code      = String(rr[3] != null ? rr[3] : '').trim();
+          tipStr    = String(r[4] || '').trim();
+          desc      = String(r[5] || '').trim();
+          net       = parseDecimal(r[6]);
+          fx        = parseDecimal(r[9]);
+          durum     = String(r[10] || '').trim();
+          idCol     = r[12];
+          invoiceNo = '';
+        }
+        
+        if (!supplier && !net) continue;
+        
+        // Hesap kodunu temizle — sayısal değer geldiyse string'e çevir
+        if (code && !isNaN(parseFloat(code)) && !code.includes('.')) {
+          // Gerçek bir hesap kodu değil, sayısal — temizle
+          code = String(rr[isNewFormat ? 0 : 3] || '');
+        }
+        
+        const oldInv = idCol ? state.invoices.find(x => x.id === idCol) : null;
         newInvoices.push({
           id: idCol || ('i_' + Date.now() + '_' + i),
-          date: toDate(r[0]),
-          dueDate: toDate(r[1]),
-          supplier: String(r[2] || '').trim(),
-          code: String(r[3] || '').trim(),
-          type: findCatKey(r[4]) || 'material',
-          desc: String(r[5] || '').trim(),
-          amount: parseFloat(r[6]) || 0,
-          vat: parseFloat(r[7]) ? parseFloat(r[7]) / 100 : 0.20,
-          fxRate: parseFloat(r[9]) || 0,
-          status: (String(r[10] || '').toLowerCase().includes('ödendi')) ? 'paid' : 'pending',
-          paidDate: toDate(r[11]),
+          invoiceNo: invoiceNo || '',
+          date: dateStr,
+          dueDate: dueStr,
+          supplier,
+          code,
+          type: findCatKey(tipStr) || 'material',
+          desc,
+          amount: net,
+          kdvRows: [{ rate: 20, amount: net * 0.20 }],
+          fxRate: fx || getCurrentFx(),
+          stopajRate: 0,
+          tevkifatRate: 0,
+          installments: [],
+          status: (durum.toLowerCase().includes('ödendi')) ? 'paid' : 'pending',
           hasAttachment: oldInv ? oldInv.hasAttachment : false
         });
       }
