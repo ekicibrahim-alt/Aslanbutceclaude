@@ -471,7 +471,35 @@ body.view-mode .lock-status * {
 .data-table tr.level-2 .toggle-icon { background: rgba(184,134,61,0.18); }
 .data-table tr.collapsed-hidden { display: none; }
 
-/* FORM */
+/* TABLO FİLTRESİ */
+.table-filter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 12px 0;
+}
+.table-filter-input {
+  flex: 1;
+  max-width: 320px;
+  padding: 7px 10px 7px 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  outline: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236a655c' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 10px center;
+  transition: border-color 0.15s;
+}
+.table-filter-input:focus { border-color: var(--accent); }
+.table-filter-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.row-hidden { display: none !important; }
 .form-row {
   display: grid;
   gap: 12px;
@@ -894,6 +922,11 @@ body.view-mode .lock-status * {
           <button class="btn btn-primary" onclick="openBudgetModal()">+ Kalem Ekle</button>
         </div>
       </div>
+      <div class="table-filter-wrap">
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (kod, kalem adı, tedarikçi, tip)" oninput="filterTable('budgetTableBody', this.value, this)" id="filter-budget">
+        <span class="table-filter-count" id="filter-budget-count"></span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-budget','budgetTableBody','filter-budget-count')">Temizle</button>
+      </div>
       <div style="overflow-x: auto;">
         <table class="data-table">
           <thead>
@@ -944,6 +977,11 @@ body.view-mode .lock-status * {
           <button class="btn btn-ghost" onclick="filterAll()">Tümü</button>
         </div>
       </div>
+      <div class="table-filter-wrap">
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (kod, kalem adı)" oninput="filterTable('programTableBody', this.value, this)" id="filter-program">
+        <span class="table-filter-count" id="filter-program-count"></span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-program','programTableBody','filter-program-count')">Temizle</button>
+      </div>
       <div style="overflow-x: auto;">
         <table class="data-table">
           <thead>
@@ -977,6 +1015,11 @@ body.view-mode .lock-status * {
           <button class="btn btn-ghost" onclick="exportInvoicesCsv()">CSV İndir</button>
           <button class="btn btn-primary" onclick="openInvoiceModal()">+ Fatura Ekle</button>
         </div>
+      </div>
+      <div class="table-filter-wrap">
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (fatura no, cari, hesap kodu, açıklama, durum)" oninput="filterTable('invoiceTableBody', this.value, this)" id="filter-invoice">
+        <span class="table-filter-count" id="filter-invoice-count"></span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-invoice','invoiceTableBody','filter-invoice-count')">Temizle</button>
       </div>
       <div style="overflow-x: auto;">
         <table class="data-table" id="invoiceMainTable">
@@ -1030,6 +1073,11 @@ body.view-mode .lock-status * {
         <div class="section-actions">
           <button class="btn btn-primary" onclick="openDeductionModal()">+ Kayıt Ekle</button>
         </div>
+      </div>
+      <div class="table-filter-wrap">
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (tedarikçi, hesap kodu)" oninput="filterTable('deductionTableBody', this.value, this)" id="filter-deduction">
+        <span class="table-filter-count" id="filter-deduction-count"></span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-deduction','deductionTableBody','filter-deduction-count')">Temizle</button>
       </div>
       <div style="overflow-x: auto;">
         <table class="data-table" id="deductionTable">
@@ -1096,6 +1144,11 @@ body.view-mode .lock-status * {
         <div class="section-actions">
           <button class="btn btn-primary" onclick="openCollectionModal()">+ Tahsilat Ekle</button>
         </div>
+      </div>
+      <div class="table-filter-wrap">
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (müşteri, açıklama, durum)" oninput="filterTable('collectionTableBody', this.value, this)" id="filter-collection">
+        <span class="table-filter-count" id="filter-collection-count"></span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-collection','collectionTableBody','filter-collection-count')">Temizle</button>
       </div>
       <div style="overflow-x: auto;">
         <table class="data-table">
@@ -1457,10 +1510,19 @@ body.view-mode .lock-status * {
     </div>
     
     <!-- Net Tutar -->
-    <div class="form-row form-row-3">
-      <div class="form-field"><label>Net Tutar (KDV Hariç TL) *</label><input type="number" id="im-amount" step="0.01" oninput="recalcInvoiceTotals()"></div>
-      <div class="form-field"><label>Stopaj Oranı (%)</label><input type="number" id="im-stopaj" step="0.01" value="0" oninput="recalcInvoiceTotals()"></div>
-      <div class="form-field"><label>Tevkifat Oranı (%)</label><input type="number" id="im-tevkifat" step="0.01" value="0" oninput="recalcInvoiceTotals()"></div>
+    <div class="form-row form-row-2">
+      <div class="form-field">
+        <label>Net Tutar (KDV Hariç TL) *</label>
+        <input type="text" id="im-amount" placeholder="0,00" oninput="onInvoiceAmountChange('TL')">
+      </div>
+      <div class="form-field">
+        <label>Net Tutar (USD) <span style="font-size:10px;color:var(--text-muted);">— TL girilince otomatik</span></label>
+        <input type="text" id="im-amount-usd" placeholder="0.00" oninput="onInvoiceAmountChange('USD')" style="color:var(--accent);font-weight:600;">
+      </div>
+    </div>
+    <div class="form-row form-row-2">
+      <div class="form-field"><label>Stopaj Oranı (%)</label><input type="text" id="im-stopaj" value="0" oninput="recalcInvoiceTotals()"></div>
+      <div class="form-field"><label>Tevkifat Oranı (%)</label><input type="text" id="im-tevkifat" value="0" oninput="recalcInvoiceTotals()"></div>
     </div>
     
     <!-- Çoklu KDV Satırları -->
@@ -3220,6 +3282,21 @@ function renderAll() {
   renderSettings();
   renderProjectList();
   renderCharts();
+  reapplyFilters();
+}
+
+function reapplyFilters() {
+  const filters = [
+    { inputId: 'filter-budget',     tbodyId: 'budgetTableBody' },
+    { inputId: 'filter-program',    tbodyId: 'programTableBody' },
+    { inputId: 'filter-invoice',    tbodyId: 'invoiceTableBody' },
+    { inputId: 'filter-deduction',  tbodyId: 'deductionTableBody' },
+    { inputId: 'filter-collection', tbodyId: 'collectionTableBody' },
+  ];
+  filters.forEach(f => {
+    const inp = document.getElementById(f.inputId);
+    if (inp && inp.value) filterTable(f.tbodyId, inp.value, inp);
+  });
 }
 
 function switchTab(tabName) {
@@ -4196,8 +4273,52 @@ function refreshCategoryDropdowns() {
 }
 
 // ============================================================
-// CHARTS
+// TABLO FİLTRESİ — Excel filtresi gibi, her sekmede kendi içinde
 // ============================================================
+function filterTable(tbodyId, q, inputEl) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  const term = q.trim().toLowerCase();
+  let visible = 0, total = 0;
+
+  Array.from(tbody.rows).forEach(tr => {
+    // Toplam satırı — her zaman göster
+    if (tr.style.fontWeight === '700' || tr.cells[0]?.textContent?.includes('TOPLAM') || tr.cells[0]?.textContent?.includes('PROJE')) {
+      tr.classList.remove('row-hidden');
+      return;
+    }
+    total++;
+    if (!term) {
+      tr.classList.remove('row-hidden');
+      visible++;
+      return;
+    }
+    // Tüm hücrelerin text içeriğinde ara
+    const rowText = Array.from(tr.cells).map(td => td.textContent).join(' ').toLowerCase();
+    if (rowText.includes(term)) {
+      tr.classList.remove('row-hidden');
+      visible++;
+    } else {
+      tr.classList.add('row-hidden');
+    }
+  });
+
+  // Sayaç güncelle
+  const countId = inputEl ? inputEl.id.replace('filter-', 'filter-') + '-count' : null;
+  if (countId) {
+    const countEl = document.getElementById(countId);
+    if (countEl) {
+      countEl.textContent = term ? `${visible} / ${total} kayıt` : (total > 0 ? `${total} kayıt` : '');
+    }
+  }
+}
+
+function clearFilter(inputId, tbodyId, countId) {
+  const inp = document.getElementById(inputId);
+  if (inp) { inp.value = ''; filterTable(tbodyId, '', inp); }
+  const cnt = document.getElementById(countId);
+  if (cnt) cnt.textContent = '';
+}
 let cashflowChartInst = null;
 let cashflowUsdChartInst = null;
 let financingChartInst = null;
@@ -4498,6 +4619,8 @@ function openInvoiceModal() {
   updateFxSourceHint(today);
   document.getElementById('im-desc').value = '';
   document.getElementById('im-amount').value = '';
+  const usdEl = document.getElementById('im-amount-usd');
+  if (usdEl) usdEl.value = '';
   document.getElementById('im-stopaj').value = '0';
   document.getElementById('im-tevkifat').value = '0';
   document.getElementById('im-installmentCount').value = '1';
@@ -4528,6 +4651,8 @@ function editInvoice(id) {
   document.getElementById('im-fx').value = inv.fxRate || '';
   document.getElementById('im-desc').value = inv.desc || '';
   document.getElementById('im-amount').value = inv.amount || '';
+  const usdEl2 = document.getElementById('im-amount-usd');
+  if (usdEl2 && inv.amount && inv.fxRate) usdEl2.value = fmtNum(inv.amount / inv.fxRate, 2);
   document.getElementById('im-stopaj').value = inv.stopajRate || 0;
   document.getElementById('im-tevkifat').value = inv.tevkifatRate || 0;
   
@@ -4609,6 +4734,20 @@ function recalcKdvFromRate(idx) {
 }
 
 // Toplam hesaplama (modal içi canlı güncelleme)
+function onInvoiceAmountChange(currency) {
+  const fx = parseDecimal(document.getElementById('im-fx').value) || getCurrentFx();
+  if (currency === 'TL') {
+    const tl = parseDecimal(document.getElementById('im-amount').value);
+    const usdEl = document.getElementById('im-amount-usd');
+    if (usdEl && fx > 0) usdEl.value = tl > 0 ? fmtNum(tl / fx, 2) : '';
+  } else {
+    const usd = parseDecimal(document.getElementById('im-amount-usd').value);
+    const fx2 = parseDecimal(document.getElementById('im-fx').value) || getCurrentFx();
+    document.getElementById('im-amount').value = usd > 0 ? fmtNum(usd * fx2, 2) : '';
+  }
+  recalcInvoiceTotals();
+}
+
 function recalcInvoiceTotals() {
   const net = parseDecimal(document.getElementById('im-amount').value);
   const stopajRate = parseDecimal(document.getElementById('im-stopaj').value);
@@ -5280,6 +5419,8 @@ function onInvoiceDateChange() {
 function onInvoiceFxManualEdit() {
   invoiceFxManuallyEdited = true;
   document.getElementById('im-fx-source').textContent = '(manuel)';
+  // Kur değişince TL → USD güncelle
+  onInvoiceAmountChange('TL');
 }
 
 function updateFxSourceHint(date) {
