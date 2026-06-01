@@ -791,6 +791,9 @@ body.view-mode .lock-status * {
       </div>
     </div>
 
+    <!-- Teminat Mektubu Uyarı Kartı -->
+    <div id="ozetMektupUyari" style="display:none;"></div>
+
     <!-- Kategori Kırılımı -->
     <div class="section">
       <div class="section-header">
@@ -3581,6 +3584,39 @@ function renderKpis() {
     eta.textContent = '—';
     etaDelay.textContent = 'Hesaplama için fatura gerekli';
   }
+
+  // Teminat mektubu uyarısı — özet sayfasında
+  const uyariEl = document.getElementById('ozetMektupUyari');
+  if (uyariEl) {
+    const mektuplar = state.teminatMektuplari || [];
+    const kritik = mektuplar.filter(m => m.status === 'aktif' && mektupKalanGun(m.vade) !== null && mektupKalanGun(m.vade) < 0);
+    const yakin  = mektuplar.filter(m => m.status === 'aktif' && mektupKalanGun(m.vade) !== null && mektupKalanGun(m.vade) >= 0 && mektupKalanGun(m.vade) <= 30);
+    const aktif  = mektuplar.filter(m => m.status === 'aktif');
+
+    if (kritik.length > 0 || yakin.length > 0) {
+      let html = `<div style="padding:12px 16px;border-radius:8px;margin-bottom:12px;
+        background:${kritik.length > 0 ? '#fdecea' : '#fff8ec'};
+        border:1px solid ${kritik.length > 0 ? '#f5c6c6' : '#f0c060'};">
+        <div style="font-weight:600;font-size:13px;margin-bottom:6px;">
+          🏦 Teminat Mektubu Uyarısı
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:12px;">`;
+      kritik.forEach(m => {
+        html += `<span style="color:#a44132;">🔴 ${escapeHtml(m.no||m.bank)} — ${escapeHtml(m.supplier)} (${Math.abs(mektupKalanGun(m.vade))} gün geçti)</span>`;
+      });
+      yakin.forEach(m => {
+        html += `<span style="color:#856404;">🟡 ${escapeHtml(m.no||m.bank)} — ${escapeHtml(m.supplier)} (${mektupKalanGun(m.vade)} gün kaldı)</span>`;
+      });
+      html += `</div>
+        <div style="margin-top:8px;font-size:11px;color:var(--text-muted);">
+          Toplam ${aktif.length} aktif mektup — <a href="#" onclick="switchTab('kesintiler');return false;" style="color:var(--accent);">Kesintiler sekmesinde gör →</a>
+        </div></div>`;
+      uyariEl.innerHTML = html;
+      uyariEl.style.display = 'block';
+    } else {
+      uyariEl.style.display = 'none';
+    }
+  }
 }
 
 function renderCategoryBreakdown() {
@@ -3849,24 +3885,22 @@ function renderProgramTable() {
   tbody.innerHTML = '';
   
   // Tüm kalemler — seviye 1 dahil
-  // Seviye 1: tarihleri alt kalemlerden türetilir, Zamanla butonu yok
-  // Diğerleri: yaprak ise kendi programı, yaprak değilse türetilmiş
+  // Yaprak kalem (alt kalemi olmayan, her seviyede) zamanlanabilir
+  // Alt kalemi olanlar: tarihleri alt kalemlerden türetilir, Zamanla butonu yok
   const allItems = [...state.budget].sort((a, b) => a.code.localeCompare(b.code));
   
   const filtered = programFilter === 'unscheduled'
-    ? allItems.filter(b => {
-        if (b.level === 1) return false; // ana kategoriler "atanmamış" filtresinde gösterilmez
-        return isBudgetLeaf(b) && !state.program[b.id];
-      })
+    ? allItems.filter(b => isBudgetLeaf(b) && !state.program[b.id])
     : allItems;
   
   filtered.forEach(b => {
-    const isLevel1 = b.level === 1;
     const isLeaf = isBudgetLeaf(b);
     const hasKids = hasChildren(b);
+    // Sadece alt kalemi olanlar türetilir; yaprak kalem (her seviyede) zamanlanabilir
+    const isParent = !isLeaf;
     
     let prog, derivedNote = '';
-    if (isLevel1 || !isLeaf) {
+    if (isParent) {
       const derived = getDerivedProgramRange(b);
       prog = derived || {};
       if (derived) derivedNote = ' <span style="font-size:10px;color:var(--text-muted);">↑ alt kalemlerden</span>';
@@ -3896,12 +3930,12 @@ function renderProgramTable() {
       : '';
 
     const indent = '&nbsp;'.repeat((b.level - 1) * 4);
-    const actionCell = (isLevel1 || !isLeaf)
+    const actionCell = isParent
       ? '—'
       : `<button class="btn btn-icon btn-ghost" onclick="openProgramModal('${b.id}')">Zamanla</button>`;
     const startCell = prog.start
       ? fmtMonth(prog.start) + derivedNote
-      : (isLevel1 ? '—' : '<span class="badge badge-warning">Atanmamış</span>');
+      : (isParent ? '—' : '<span class="badge badge-warning">Atanmamış</span>');
     
     tr.innerHTML = `
       <td class="mono">${b.code}</td>
@@ -3909,7 +3943,7 @@ function renderProgramTable() {
       <td class="center">${startCell}</td>
       <td class="center">${prog.end ? fmtMonth(prog.end) : '—'}</td>
       <td class="center">${months || '—'}</td>
-      <td>${(!isLevel1 && isLeaf && prog.curve) ? labelCurve(prog.curve) : '—'}</td>
+      <td>${(isLeaf && prog.curve) ? labelCurve(prog.curve) : '—'}</td>
       <td class="right">${fmtUSD(getBudgetItemTotalUsd(b))}</td>
       <td class="center">${actionCell}</td>
     `;
@@ -5978,7 +6012,6 @@ function renderDeductionsAll() {
   renderDeductionColumnTags();
   renderDeductionTable();
   renderMektupTable();
-  renderTeminatTable();
   renderDeductionCashflowSummary();
   renderDeductionChart();
 }
@@ -6547,7 +6580,6 @@ function renderDeductionCashflowSummary() {
   const yansitmaCols = state.settings.deductionColumns.filter(c => c.type === 'yansitma');
 
   let toplamTeminat = 0, toplamYansitma = 0, iadeEdilen = 0;
-
   state.deductions.forEach(d => {
     teminatCols.forEach(col => {
       const v = (d.columns && d.columns[col.key]) || 0;
@@ -6558,33 +6590,47 @@ function renderDeductionCashflowSummary() {
       toplamYansitma += (d.columns && d.columns[col.key]) || 0;
     });
   });
-
   const bekleyenTeminat = toplamTeminat - iadeEdilen;
+
+  // Teminat mektupları özeti
+  const mektuplar = state.teminatMektuplari || [];
+  const aktifMektuplar = mektuplar.filter(m => m.status === 'aktif');
+  const mektupToplamTRY = aktifMektuplar.filter(m => m.doviz === 'TRY').reduce((s,m) => s + (m.tutar||0), 0);
+  const mektupToplamUSD = aktifMektuplar.filter(m => m.doviz === 'USD').reduce((s,m) => s + (m.tutar||0), 0);
+  const vadesiGelenMektup = aktifMektuplar.filter(m => { const g = mektupKalanGun(m.vade); return g !== null && g <= 30; });
+
   const fx = getCurrentFx();
 
   el.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:8px;">
+    <div style="display:grid;grid-template-columns:repeat(2,1fr) repeat(2,1fr);gap:12px;margin-top:8px;">
       <div class="kpi-card" style="border-left:3px solid #1e3a5f;">
-        <div class="label">🔒 Toplam Teminat Birikimi</div>
+        <div class="label">🔒 Nakit Teminat Birikimi</div>
         <div class="value">${fmtTL(toplamTeminat)}</div>
-        <div class="value-secondary">${fmtUSD(toplamTeminat / fx)}</div>
-      </div>
-      <div class="kpi-card" style="border-left:3px solid var(--danger);">
-        <div class="label">⏳ Bekleyen İade</div>
-        <div class="value">${fmtTL(bekleyenTeminat)}</div>
-        <div class="value-note">İleride nakit girişi olacak</div>
+        <div class="value-note">⏳ Bekleyen iade: ${fmtTL(bekleyenTeminat)}</div>
       </div>
       <div class="kpi-card" style="border-left:3px solid var(--accent);">
         <div class="label">📤 Toplam Yansıtma</div>
         <div class="value">${fmtTL(toplamYansitma)}</div>
         <div class="value-note">3. taraflara ödendi</div>
       </div>
+      <div class="kpi-card" style="border-left:3px solid ${vadesiGelenMektup.length > 0 ? 'var(--danger)' : 'var(--success)'};">
+        <div class="label">🏦 Aktif Teminat Mektupları (${aktifMektuplar.length} adet)</div>
+        <div class="value">${mektupToplamTRY > 0 ? fmtTL(mektupToplamTRY) : (mektupToplamUSD > 0 ? fmtUSD(mektupToplamUSD) : '—')}</div>
+        <div class="value-note" style="${vadesiGelenMektup.length > 0 ? 'color:var(--danger);font-weight:600;' : ''}">
+          ${vadesiGelenMektup.length > 0 ? `⚠ ${vadesiGelenMektup.length} mektup vadesi yakın/geçti` : 'Nakit akışı etkilemez'}
+        </div>
+      </div>
+      <div class="kpi-card" style="border-left:3px solid var(--success);">
+        <div class="label">💰 Toplam Beklenen Nakit Girişi</div>
+        <div class="value">${fmtTL(bekleyenTeminat)}</div>
+        <div class="value-secondary">${fmtUSD(bekleyenTeminat / fx)}</div>
+      </div>
     </div>
     <div style="margin-top:12px;padding:12px;background:var(--surface-2);border-radius:8px;font-size:12px;color:var(--text-muted);">
-      <strong>Nakit Akışa Etkisi:</strong>
-      Yansıtma (${fmtTL(toplamYansitma)}) nakit çıkışını azaltmaz — alıcı değişir.
-      Teminat (${fmtTL(bekleyenTeminat)}) hakediş ödemelerini azaltır ve bekleyen nakit girişi oluşturur.
-      Teminatlar iade edilince nakit akışa <strong style="color:var(--success);">+${fmtTL(bekleyenTeminat)}</strong> olarak yansır.
+      <strong>Özet:</strong>
+      <strong>Nakit teminat</strong> (${fmtTL(bekleyenTeminat)}) hakediş ödemelerini azaltır — iade edilince nakit girişi oluşur.
+      <strong>Yansıtma</strong> (${fmtTL(toplamYansitma)}) nakit çıkışını azaltmaz, alıcı değişir.
+      <strong>Teminat mektupları</strong> nakit akışını etkilemez — sadece garanti belgesidir, takip gerektirir.
     </div>
   `;
 }
@@ -7110,10 +7156,10 @@ async function exportXlsx() {
 
   const allBudgetItems = [...state.budget].sort((a,b) => a.code.localeCompare(b.code));
   allBudgetItems.forEach(b => {
-    const isLevel1 = b.level === 1;
     const isLeaf = isBudgetLeaf(b);
+    const isParent = !isLeaf;
     let prog;
-    if (isLevel1 || !isLeaf) {
+    if (isParent) {
       prog = getDerivedProgramRange(b) || {};
     } else {
       prog = state.program[b.id] || {};
@@ -7125,9 +7171,9 @@ async function exportXlsx() {
     const indent = '  '.repeat(b.level - 1);
     const row = wsProg.addRow({
       code: b.code, name: indent + b.name,
-      start: prog.start ? fmtMonth(prog.start) : (isLevel1 ? '↑ alt kalemler' : '—'),
+      start: prog.start ? fmtMonth(prog.start) : (isParent ? '↑ alt kalemler' : '—'),
       end:   prog.end   ? fmtMonth(prog.end)   : '—',
-      dur: months, curve: (!isLevel1 && isLeaf && prog.curve) ? labelCurve(prog.curve) : '—',
+      dur: months, curve: (isLeaf && prog.curve) ? labelCurve(prog.curve) : '—',
       busd, btry, ausd: ausd > 0 ? ausd : null, rusd: busd - ausd
     });
     row.height = b.level <= 2 ? 19 : 16;
