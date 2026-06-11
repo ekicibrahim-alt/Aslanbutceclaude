@@ -2956,16 +2956,16 @@ function getLeafBudgetItems() {
 
 // Bir kalemin alt kalemi var mı? (kod hiyerarşisine göre)
 function isBudgetLeaf(b) {
-  return !state.budget.some(other => other.id !== b.id && other.code.startsWith(b.code + '.'));
+  return !state.budget.some(other => other.id !== b.id && String(other.code||'').startsWith(String(b.code||'') + '.'));
 }
 
 // Doğrudan alt kalemleri döndürür (bir seviye altı)
 function getDirectChildren(b) {
   return state.budget.filter(other => {
     if (other.id === b.id) return false;
-    if (!other.code.startsWith(b.code + '.')) return false;
+    if (!String(other.code||'').startsWith(String(b.code||'') + '.')) return false;
     // Sadece bir seviye altı: kod farkı . ile bir kez bölünmeli
-    const suffix = other.code.substring(b.code.length + 1);
+    const suffix = String(other.code||'').substring(String(b.code||'').length + 1);
     return !suffix.includes('.');
   });
 }
@@ -2974,7 +2974,7 @@ function getDirectChildren(b) {
 function getDescendantLeaves(b) {
   if (isBudgetLeaf(b)) return [b];
   const descendants = state.budget.filter(other => 
-    other.id !== b.id && other.code.startsWith(b.code + '.')
+    other.id !== b.id && String(other.code||'').startsWith(String(b.code||'') + '.')
   );
   return descendants.filter(d => isBudgetLeaf(d));
 }
@@ -3146,7 +3146,7 @@ function monthKey(d) {
 // Bir kalemin (ve alt-kalemlerinin) toplam bütçesini USD ver
 function getBudgetForCode(codePrefix) {
   return getLeafBudgetItems()
-    .filter(b => b.code === codePrefix || b.code.startsWith(codePrefix + '.'))
+    .filter(b => b.code === codePrefix || String(b.code||'').startsWith(codePrefix + '.'))
     .reduce((s, b) => s + getBudgetItemTotalUsd(b), 0);
 }
 
@@ -3157,7 +3157,7 @@ function getActualForCode(codePrefix, targetDate) {
   return state.invoices
     .filter(inv => {
       if (!inv.code) return false;
-      const matches = inv.code === codePrefix || inv.code.startsWith(codePrefix + '.');
+      const matches = inv.code === codePrefix || String(inv.code||'').startsWith(codePrefix + '.');
       if (!matches) return false;
       const invD = new Date(inv.date);
       return invD <= target;
@@ -3174,7 +3174,7 @@ function getPlannedForCode(codePrefix, targetDate) {
   const target = targetDate || getTargetDate();
   const targetKey = monthKey(target);
   const leaves = getLeafBudgetItems()
-    .filter(b => b.code === codePrefix || b.code.startsWith(codePrefix + '.'));
+    .filter(b => b.code === codePrefix || String(b.code||'').startsWith(codePrefix + '.'));
   let total = 0;
   leaves.forEach(b => {
     const prog = state.program[b.id];
@@ -3192,7 +3192,7 @@ function getPlannedForCode(codePrefix, targetDate) {
 // Bir kalem altında programdaki en erken başlangıç ve en geç bitiş
 function getDateRangeForCode(codePrefix) {
   const leaves = getLeafBudgetItems()
-    .filter(b => b.code === codePrefix || b.code.startsWith(codePrefix + '.'));
+    .filter(b => b.code === codePrefix || String(b.code||'').startsWith(codePrefix + '.'));
   let minStart = null, maxEnd = null;
   leaves.forEach(b => {
     const p = state.program[b.id];
@@ -3267,7 +3267,8 @@ function toggleCollapse(parentId, parentCode) {
 
 // Bir satırın tüm üst kod'larını döndür
 function getParentCodes(code) {
-  const parts = code.split('.');
+  if (!code) return [];
+  const parts = String(code).split('.');
   const codes = [];
   for (let i = 1; i < parts.length; i++) {
     codes.push(parts.slice(0, i).join('.'));
@@ -3279,8 +3280,8 @@ function getParentCodes(code) {
 function hasChildren(b) {
   return state.budget.some(other => {
     if (other.id === b.id) return false;
-    if (!other.code.startsWith(b.code + '.')) return false;
-    const suffix = other.code.substring(b.code.length + 1);
+    if (!String(other.code||'').startsWith(String(b.code||'') + '.')) return false;
+    const suffix = String(other.code||'').substring(String(b.code||'').length + 1);
     return !suffix.includes('.');
   });
 }
@@ -3719,7 +3720,7 @@ function renderM2Metrics() {
   // Arsa kalemleri (settings.landAccountCode prefix'iyle başlayanlar)
   const landCode = state.settings.landAccountCode || '';
   const landUsd = landCode 
-    ? leaves.filter(b => b.code === landCode || b.code.startsWith(landCode + '.') || b.code.startsWith(landCode))
+    ? leaves.filter(b => b.code === landCode || String(b.code||'').startsWith(landCode + '.') || String(b.code||'').startsWith(landCode))
         .reduce((s, b) => s + getBudgetItemTotalUsd(b), 0)
     : 0;
   
@@ -3759,7 +3760,7 @@ function renderMainItems() {
   if (!tbody) return;
   tbody.innerHTML = '';
   // Ana kalemler (level 1)
-  const mainItems = state.budget.filter(b => b.level === 1).sort((a, b) => a.code.localeCompare(b.code));
+  const mainItems = state.budget.filter(b => b.level === 1).sort((a, b) => (a.code||"").localeCompare(b.code||""));
   mainItems.forEach(b => {
     const budgetUsd = getBudgetForCode(b.code);
     if (budgetUsd === 0) return;
@@ -3808,7 +3809,7 @@ function renderBudgetTable() {
   const totalBody = document.getElementById('budgetTotalBody');
   tbody.innerHTML = '';
   if (totalBody) totalBody.innerHTML = '';
-  const sorted = [...state.budget].sort((a, b) => a.code.localeCompare(b.code));
+  const sorted = [...state.budget].sort((a, b) => (a.code||"").localeCompare(b.code||""));
   const fx = getCurrentFx();
   let totalBaseUsd=0, totalBaseTry=0, totalRevUsd=0, totalRevTry=0;
   let hasAnyRevise = false; // gerçekten revize girilmiş kalem var mı?
@@ -3929,7 +3930,7 @@ function renderProgramTable() {
   // Tüm kalemler — seviye 1 dahil
   // Yaprak kalem (alt kalemi olmayan, her seviyede) zamanlanabilir
   // Alt kalemi olanlar: tarihleri alt kalemlerden türetilir, Zamanla butonu yok
-  const allItems = [...state.budget].sort((a, b) => a.code.localeCompare(b.code));
+  const allItems = [...state.budget].sort((a, b) => (a.code||"").localeCompare(b.code||""));
   
   const filtered = programFilter === 'unscheduled'
     ? allItems.filter(b => isBudgetLeaf(b) && !state.program[b.id])
@@ -3955,7 +3956,7 @@ function renderProgramTable() {
     tr.className = `level-${b.level}`;
 
     // Collapse desteği
-    const allSorted = [...state.budget].sort((a, b) => a.code.localeCompare(b.code));
+    const allSorted = [...state.budget].sort((a, b) => (a.code||"").localeCompare(b.code||""));
     const parentCodes = getParentCodes(b.code);
     if (parentCodes.length > 0) {
       tr.setAttribute('data-parent-codes', parentCodes.join(','));
@@ -4646,7 +4647,7 @@ function onBudgetLevelChange() {
 function onBudgetCodeOrLevelChange() {
   const code = (document.getElementById('bm-code').value || '').trim();
   const hasKids = code
-    ? state.budget.some(b => b.id !== editingBudgetId && b.code.startsWith(code + '.'))
+    ? state.budget.some(b => b.id !== editingBudgetId && String(b.code||'').startsWith(code + '.'))
     : false;
   _applyBudgetParentState(hasKids);
 }
@@ -7061,7 +7062,7 @@ async function exportXlsx() {
     cell.border = { bottom: { style: 'medium', color: { argb: C.amber } } };
   });
 
-  const sortedBudget = [...state.budget].sort((a, b) => a.code.localeCompare(b.code));
+  const sortedBudget = [...state.budget].sort((a, b) => (a.code||"").localeCompare(b.code||""));
   let bTotBaseUsd = 0, bTotBaseTry = 0, bTotActUsd = 0, bTotActTry = 0;
   let bHasRevise = false;
 
@@ -7346,7 +7347,7 @@ async function exportXlsx() {
     cell.border = { bottom: { style: 'medium', color: { argb: C.amber } } };
   });
 
-  const allBudgetItems = [...state.budget].sort((a,b) => a.code.localeCompare(b.code));
+  const allBudgetItems = [...state.budget].sort((a,b) => (a.code||"").localeCompare(b.code||""));
   allBudgetItems.forEach(b => {
     const isLeaf = isBudgetLeaf(b);
     const isParent = !isLeaf;
