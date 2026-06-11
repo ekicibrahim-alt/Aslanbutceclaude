@@ -1300,6 +1300,47 @@ body.view-mode .lock-status * {
       <button class="btn btn-primary" onclick="saveSettings()">Kaydet</button>
     </div>
 
+    <!-- VADE UYARI SİSTEMİ -->
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">🔔 Teminat Mektubu Vade Uyarıları</h2>
+      </div>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+        Vadesi 30 gün içinde dolacak veya geçmiş aktif mektuplar için uyarı. Tarayıcı bildirimi kurulum gerektirmez.
+        E-posta için ücretsiz <a href="https://www.emailjs.com" target="_blank" style="color:var(--accent);">EmailJS</a> hesabı aç,
+        bilgileri buraya gir (ayda 200 mail ücretsiz).
+      </p>
+      <div class="form-row form-row-2">
+        <div class="form-field">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="uy-browser" style="width:auto;"> Tarayıcı bildirimi (site açılınca)
+          </label>
+        </div>
+        <div class="form-field">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="uy-email" style="width:auto;"> E-posta uyarısı (EmailJS — günde en fazla 1)
+          </label>
+        </div>
+      </div>
+      <div id="uy-email-fields" style="display:none;">
+        <div class="form-row form-row-2">
+          <div class="form-field"><label>EmailJS Service ID</label><input type="text" id="uy-service" placeholder="service_xxxxxxx"></div>
+          <div class="form-field"><label>EmailJS Template ID</label><input type="text" id="uy-template" placeholder="template_xxxxxxx"></div>
+        </div>
+        <div class="form-row form-row-2">
+          <div class="form-field"><label>EmailJS Public Key</label><input type="text" id="uy-pubkey" placeholder="XxXxXxXxXxXxXxX"></div>
+          <div class="form-field"><label>Alıcı E-posta</label><input type="text" id="uy-to" placeholder="ornek@firma.com"></div>
+        </div>
+        <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
+          EmailJS template'inde şu değişkenleri kullan: <code>{{to_email}}</code>, <code>{{subject}}</code>, <code>{{message}}</code>
+        </p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="saveUyariSettings()">Kaydet</button>
+        <button class="btn btn-ghost" onclick="testUyari()">🔔 Test Et</button>
+      </div>
+    </div>
+
     <div class="section">
       <div class="section-header">
         <h2 class="section-title">USD/TRY Kur Projeksiyonu (Çeyreklik — Gelecek Planlama)</h2>
@@ -2326,6 +2367,7 @@ function applyProjectMigrations(p) {
     return c;
   });
   p.teminatMektuplari = p.teminatMektuplari || [];
+  p.settings.uyariConfig = p.settings.uyariConfig || { browser: false, email: false, serviceId: '', templateId: '', publicKey: '', toEmail: '' };
   p.budget = (p.budget || []).map(b => ({ ...b, currency: b.currency || 'USD' }));
   // Kesinti sütunlarına tür ata (eski kayıtlar)
   const teminatKeys = ['kesinTeminat', 'nakitTeminat', 'kesin_teminat', 'nakit_teminat'];
@@ -4308,6 +4350,7 @@ function renderSettings() {
   document.getElementById('setting-salableArea').value = state.settings.salableArea || '';
   document.getElementById('setting-targetCostPerM2').value = state.settings.targetCostPerM2 || '';
   document.getElementById('setting-landAccountCode').value = state.settings.landAccountCode || '';
+  renderUyariSettings();
   
   // Özet'teki hızlı erişim alanları
   const ozetTotal = document.getElementById('ozet-totalArea');
@@ -6346,6 +6389,155 @@ async function deleteMektup(id) {
   renderDeductionsAll();
 }
 
+// ============================================================
+// VADE UYARI SİSTEMİ — Tarayıcı bildirimi + EmailJS
+// ============================================================
+function getVadeUyarilari() {
+  const aktif = (state.teminatMektuplari || []).filter(m => m.status === 'aktif');
+  const gecmis = [], yakin = [];
+  aktif.forEach(m => {
+    const g = mektupKalanGun(m.vade);
+    if (g === null) return;
+    if (g < 0) gecmis.push({ m, gun: g });
+    else if (g <= 30) yakin.push({ m, gun: g });
+  });
+  return { gecmis, yakin };
+}
+
+function uyariMesajOlustur() {
+  const { gecmis, yakin } = getVadeUyarilari();
+  if (gecmis.length === 0 && yakin.length === 0) return null;
+  const proj = state.settings.projectName || 'Proje';
+  let lines = [`[${proj}] Teminat mektubu vade uyarısı:`];
+  gecmis.forEach(({ m, gun }) =>
+    lines.push(`🔴 ${m.no || m.bank} — ${m.supplier} — vadesi ${Math.abs(gun)} gün önce doldu (${fmtDate(m.vade)})`));
+  yakin.forEach(({ m, gun }) =>
+    lines.push(`🟡 ${m.no || m.bank} — ${m.supplier} — ${gun} gün kaldı (${fmtDate(m.vade)})`));
+  return lines.join('\n');
+}
+
+function renderUyariSettings() {
+  const cfg = (state.settings && state.settings.uyariConfig) || {};
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  const chk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
+  chk('uy-browser', cfg.browser);
+  chk('uy-email', cfg.email);
+  set('uy-service', cfg.serviceId);
+  set('uy-template', cfg.templateId);
+  set('uy-pubkey', cfg.publicKey);
+  set('uy-to', cfg.toEmail);
+  const fields = document.getElementById('uy-email-fields');
+  if (fields) fields.style.display = cfg.email ? 'block' : 'none';
+  const emailChk = document.getElementById('uy-email');
+  if (emailChk && !emailChk._bound) {
+    emailChk._bound = true;
+    emailChk.addEventListener('change', () => {
+      if (fields) fields.style.display = emailChk.checked ? 'block' : 'none';
+    });
+  }
+}
+
+async function saveUyariSettings() {
+  if (!requireEdit()) return;
+  const get = id => (document.getElementById(id)?.value || '').trim();
+  const cfg = {
+    browser:    document.getElementById('uy-browser')?.checked || false,
+    email:      document.getElementById('uy-email')?.checked || false,
+    serviceId:  get('uy-service'),
+    templateId: get('uy-template'),
+    publicKey:  get('uy-pubkey'),
+    toEmail:    get('uy-to')
+  };
+  if (cfg.email && (!cfg.serviceId || !cfg.templateId || !cfg.publicKey || !cfg.toEmail)) {
+    alert('E-posta uyarısı için tüm EmailJS alanları zorunlu');
+    return;
+  }
+  state.settings.uyariConfig = cfg;
+  // Tarayıcı bildirimi izni iste
+  if (cfg.browser && 'Notification' in window && Notification.permission === 'default') {
+    await Notification.requestPermission();
+  }
+  await saveState();
+  alert('✓ Uyarı ayarları kaydedildi');
+}
+
+function showBrowserNotification(msg) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'granted') {
+    new Notification('🏦 Teminat Mektubu Uyarısı', { body: msg.substring(0, 300), tag: 'mektup-uyari' });
+  }
+}
+
+async function sendUyariEmail(msg) {
+  const cfg = state.settings.uyariConfig || {};
+  if (!cfg.serviceId || !cfg.templateId || !cfg.publicKey || !cfg.toEmail) return false;
+  try {
+    const resp = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id:  cfg.serviceId,
+        template_id: cfg.templateId,
+        user_id:     cfg.publicKey,
+        template_params: {
+          to_email: cfg.toEmail,
+          subject:  '🏦 Teminat Mektubu Vade Uyarısı — ' + (state.settings.projectName || 'Proje'),
+          message:  msg
+        }
+      })
+    });
+    return resp.ok;
+  } catch (e) {
+    console.warn('EmailJS gönderim hatası:', e);
+    return false;
+  }
+}
+
+async function testUyari() {
+  const msg = uyariMesajOlustur() || 'Test: şu an vade uyarısı gerektiren mektup yok. Sistem çalışıyor ✓';
+  const cfg = state.settings.uyariConfig || {};
+  let sonuc = [];
+  if (cfg.browser) {
+    if (!('Notification' in window)) sonuc.push('❌ Tarayıcı bildirimi desteklenmiyor');
+    else if (Notification.permission === 'denied') sonuc.push('❌ Bildirim izni reddedilmiş — tarayıcı ayarlarından aç');
+    else {
+      if (Notification.permission === 'default') await Notification.requestPermission();
+      showBrowserNotification(msg);
+      sonuc.push(Notification.permission === 'granted' ? '✓ Tarayıcı bildirimi gönderildi' : '❌ Bildirim izni verilmedi');
+    }
+  }
+  if (cfg.email) {
+    const ok = await sendUyariEmail('[TEST]\n' + msg);
+    sonuc.push(ok ? '✓ Test e-postası gönderildi — gelen kutunu kontrol et' : '❌ E-posta gönderilemedi — EmailJS bilgilerini kontrol et');
+  }
+  if (sonuc.length === 0) sonuc.push('Önce en az bir uyarı kanalını işaretle ve kaydet');
+  alert(sonuc.join('\n'));
+}
+
+// Açılışta kontrol — günde 1 kez (localStorage throttle, cihaz bazlı)
+async function checkMektupVadeUyari() {
+  try {
+    const msg = uyariMesajOlustur();
+    if (!msg) return;
+    const cfg = state.settings.uyariConfig || {};
+    const today = new Date().toISOString().substring(0, 10);
+    const throttleKey = 'mektup_uyari_son_' + (app.meta.activeProjectId || 'p');
+
+    // Tarayıcı bildirimi: her açılışta (throttle yok, zaten site açıkken)
+    if (cfg.browser) showBrowserNotification(msg);
+
+    // E-posta: günde en fazla 1
+    if (cfg.email) {
+      let son = '';
+      try { son = localStorage.getItem(throttleKey) || ''; } catch (e) {}
+      if (son !== today) {
+        const ok = await sendUyariEmail(msg);
+        if (ok) { try { localStorage.setItem(throttleKey, today); } catch (e) {} }
+      }
+    }
+  } catch (e) { console.warn('Vade uyarı kontrolü hatası:', e); }
+}
+
 function renderDeductionColumnTags() {
   const container = document.getElementById('deductionColumnsContainer');
   if (!container) return;
@@ -7317,6 +7509,8 @@ async function _bna_init() {
   renderAll();
   updateLockUI();
   updateStorageIndicator();
+  // Vade uyarı kontrolü (bildirim + günde 1 mail)
+  setTimeout(checkMektupVadeUyari, 1500);
 }
 
 if (document.readyState === 'loading') {
