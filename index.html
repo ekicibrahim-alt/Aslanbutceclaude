@@ -1871,7 +1871,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v3.2 (01.06)';
+const APP_BUILD = 'v3.3 (01.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -2371,6 +2371,33 @@ function applyProjectMigrations(p) {
   p.teminatMektuplari = p.teminatMektuplari || [];
   p.settings.uyariConfig = p.settings.uyariConfig || { browser: false, email: false, serviceId: '', templateId: '', publicKey: '', toEmail: '' };
   p.budget = (p.budget || []).map(b => ({ ...b, currency: b.currency || 'USD' }));
+  // ID onarımı: eksik / mükerrer / sayısal id'leri düzelt (bozuk Excel import'larından)
+  {
+    const seen = new Set();
+    let fixN = 0;
+    const idMap = {}; // eski → yeni
+    p.budget = p.budget.map(b => {
+      const oldId = b.id;
+      let bid = (b.id !== null && b.id !== undefined) ? String(b.id) : '';
+      if (!bid || seen.has(bid)) {
+        bid = 'b_fix_' + Date.now() + '_' + (fixN++);
+        if (oldId !== null && oldId !== undefined) idMap[String(oldId)] = bid;
+      } else if (typeof b.id !== 'string') {
+        idMap[String(oldId)] = bid; // sayısal id → string'e sabitle
+      }
+      seen.add(bid);
+      return { ...b, id: bid };
+    });
+    // İş programı anahtarlarını yeni id'lere taşı
+    if (p.program) {
+      Object.keys(idMap).forEach(oldKey => {
+        if (p.program[oldKey] !== undefined && idMap[oldKey] !== oldKey) {
+          p.program[idMap[oldKey]] = p.program[oldKey];
+          delete p.program[oldKey];
+        }
+      });
+    }
+  }
   // Kesinti sütunlarına tür ata (eski kayıtlar)
   const teminatKeys = ['kesinTeminat', 'nakitTeminat', 'kesin_teminat', 'nakit_teminat'];
   p.settings.deductionColumns = (p.settings.deductionColumns || []).map(col => {
@@ -3112,7 +3139,7 @@ function getBudgetItemActualTry(b) {
 // Revize bütçe kaydet
 async function reviseBudgetItem(id) {
   if (!requireEdit()) return;
-  const b = state.budget.find(x => x.id === id);
+  const b = state.budget.find(x => String(x.id) === String(id));
   if (!b) return;
   const basUsd = getBudgetItemTotalUsd(b);
   const actUsd = getBudgetItemActualUsd(b);
@@ -4697,7 +4724,7 @@ function closeBudgetModal() {
 }
 function editBudgetItem(id) {
   if (!requireEdit()) return;
-  const b = state.budget.find(x => x.id === id);
+  const b = state.budget.find(x => String(x.id) === String(id));
   if (!b) return;
   editingBudgetId = id;
   refreshCategoryDropdowns();
@@ -4730,7 +4757,7 @@ async function saveBudgetItem() {
   let isCurrentlyLeaf = !isParentChecked;
   // Düzenleme ise ve altında kalem varsa daima parent
   if (editingBudgetId) {
-    const existing = state.budget.find(x => x.id === editingBudgetId);
+    const existing = state.budget.find(x => String(x.id) === String(editingBudgetId));
     if (existing && !isBudgetLeaf(existing)) isCurrentlyLeaf = false;
   }
   
@@ -4749,7 +4776,7 @@ async function saveBudgetItem() {
   };
   if (!item.code || !item.name) { alert('Kod ve kalem adı zorunlu'); return; }
   if (editingBudgetId) {
-    const idx = state.budget.findIndex(b => b.id === editingBudgetId);
+    const idx = state.budget.findIndex(b => String(b.id) === String(editingBudgetId));
     if (idx >= 0) state.budget[idx] = item;
   } else {
     state.budget.push(item);
@@ -4761,7 +4788,7 @@ async function saveBudgetItem() {
 async function deleteBudgetItem(id) {
   if (!requireEdit()) return;
   if (!confirm('Bu kalem silinecek. Onaylıyor musun?')) return;
-  state.budget = state.budget.filter(b => b.id !== id);
+  state.budget = state.budget.filter(b => String(b.id) !== String(id));
   delete state.program[id];
   await saveState();
   renderAll();
@@ -5219,7 +5246,7 @@ async function deleteCollection(id) {
 function openProgramModal(itemId) {
   if (!requireEdit()) return;
   editingProgramId = itemId;
-  const b = state.budget.find(x => x.id === itemId);
+  const b = state.budget.find(x => String(x.id) === String(itemId));
   const prog = state.program[itemId] || {};
   document.getElementById('pm-itemName').textContent = `${b.code} — ${b.name}`;
   // Eski YYYY-MM formatını YYYY-MM-01 (ay başı) olarak göster
@@ -5870,20 +5897,26 @@ async function importXlsx(event) {
     if (wb.SheetNames.includes('Bütçe')) {
       const rows = XLSX.utils.sheet_to_json(wb.Sheets['Bütçe'], { header: 1 });
       const newBudget = [];
+      const baseTs = Date.now();
       for (let i = 1; i < rows.length; i++) {
         const r = rows[i];
         if (!r[0] || !r[2]) continue;
-        const idCol = r[10];
+        if (String(r[0]).toUpperCase().includes('TOPLAM')) continue;
+        // ID: sadece 'b_' ile başlayan gerçek id'ler kabul edilir (eski formatta r[17])
+        const idCand = String(r[17] || r[10] || '');
+        const idCol = idCand.startsWith('b_') || idCand.startsWith('tm_') ? idCand : null;
+        const para = String(r[8] || '').toUpperCase().includes('TRY') || String(r[8] || '').toUpperCase().includes('TL') ? 'TRY' : 'USD';
         newBudget.push({
-          id: idCol || ('b_' + Date.now() + '_' + i),
+          id: idCol || ('b_' + baseTs + '_' + i),
           code: String(r[0]).trim(),
           level: parseInt(r[1]) || 5,
           name: String(r[2]).trim(),
           supplier: String(r[3] || '').trim(),
           materialType: findCatKey(r[4]) || null,
-          qty: parseFloat(r[5]) || 0,
+          qty: parseDecimal(r[5]),
           unit: String(r[6] || '').trim(),
-          unitPrice: parseFloat(r[7]) || 0
+          unitPrice: parseDecimal(r[7]),
+          currency: para
         });
       }
       state.budget = newBudget;
