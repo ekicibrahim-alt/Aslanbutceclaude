@@ -680,6 +680,7 @@ body.view-mode .lock-status * {
         <div class="value" id="activePeriod">—</div>
       </div>
       <div class="header-actions">
+        <span id="buildBadge" style="font-size:10px;color:var(--text-faint);font-family:'IBM Plex Mono',monospace;" title="Uygulama sürümü"></span>
         <span id="storageIndicator" class="storage-indicator" title="Verilerin nereye kaydedildiğini gösterir"><span class="dot"></span><span id="storageMode">—</span></span>
         <span id="lockStatus" class="lock-status locked" onclick="toggleEditMode()" title="Düzenleme kilidi"><span class="icon">🔒</span><span id="lockLabel">Sadece Görüntüleme</span></span>
         <button class="btn btn-ghost" onclick="exportXlsx()" title="Excel indir (düzenleme yetkisi gerek)">📊 Excel</button>
@@ -1870,6 +1871,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
+const APP_BUILD = 'v3.2 (01.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -3276,6 +3278,13 @@ function getParentCodes(code) {
   return codes;
 }
 
+// Bir kalem kök mü? (listede üst kalemi yoksa — seviyeden bağımsız)
+function isRootBudgetItem(b) {
+  const myCode = String(b.code || '');
+  if (!myCode) return true;
+  return !state.budget.some(other => other.id !== b.id && myCode.startsWith(String(other.code || '') + '.'));
+}
+
 // Bir bütçe kaleminin doğrudan alt kalemi var mı?
 function hasChildren(b) {
   return state.budget.some(other => {
@@ -3760,7 +3769,7 @@ function renderMainItems() {
   if (!tbody) return;
   tbody.innerHTML = '';
   // Ana kalemler (level 1)
-  const mainItems = state.budget.filter(b => b.level === 1).sort((a, b) => (a.code||"").localeCompare(b.code||""));
+  const mainItems = state.budget.filter(b => isRootBudgetItem(b)).sort((a, b) => (a.code||"").localeCompare(b.code||""));
   mainItems.forEach(b => {
     const budgetUsd = getBudgetForCode(b.code);
     if (budgetUsd === 0) return;
@@ -3828,7 +3837,7 @@ function renderBudgetTable() {
     const remUsd  = effUsd - actUsd;
     const remTry  = effTry - actTry;
 
-    if (b.level === 1) {
+    if (isRootBudgetItem(b)) {
       totalBaseUsd += baseUsd; totalBaseTry += baseTry;
       const revE = revUsd != null ? revUsd : baseUsd;
       if (revUsd != null) hasAnyRevise = true;
@@ -7080,7 +7089,7 @@ async function exportXlsx() {
     const asilmis = actUsd > effUsd + 0.01;
     const durum   = asilmis ? 'AŞIM' : (revUsd != null ? 'Revize' : (actUsd > 0 ? 'Normal' : ''));
     if (revUsd != null) bHasRevise = true;
-    if (b.level === 1) { bTotBaseUsd += baseUsd; bTotBaseTry += baseTry; bTotActUsd += actUsd; bTotActTry += actTry; }
+    if (isRootBudgetItem(b)) { bTotBaseUsd += baseUsd; bTotBaseTry += baseTry; bTotActUsd += actUsd; bTotActTry += actTry; }
 
     const effectiveQty = (b.qty && b.qty > 0) ? b.qty : (b.unitPrice > 0 ? 1 : null);
     const indent = '  '.repeat(b.level - 1);
@@ -7510,6 +7519,9 @@ async function _bna_init() {
   renderAll();
   updateLockUI();
   updateStorageIndicator();
+  const bb = document.getElementById('buildBadge');
+  if (bb) bb.textContent = APP_BUILD;
+  console.log('Bütçe & Nakit Akış — build:', APP_BUILD);
   // Vade uyarı kontrolü (bildirim + günde 1 mail)
   setTimeout(checkMektupVadeUyari, 1500);
 }
