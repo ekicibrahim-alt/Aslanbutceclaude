@@ -500,6 +500,7 @@ body.view-mode .lock-status * {
   white-space: nowrap;
 }
 .row-hidden { display: none !important; }
+.kdv-hidden .kdv-col { display: none; }
 .form-row {
   display: grid;
   gap: 12px;
@@ -930,9 +931,9 @@ body.view-mode .lock-status * {
         <input class="table-filter-input" type="text" placeholder="Filtrele... (kod, kalem adı, tedarikçi, tip)" oninput="filterTable('budgetTableBody', this.value, this)" id="filter-budget">
         <span class="table-filter-count" id="filter-budget-count"></span>
         <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-budget','budgetTableBody','filter-budget-count')">Temizle</button>
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-left:auto;white-space:nowrap;" title="Gerçekleşme ve Kalan sütunlarında, hesap koduna bağlı teminat ve avans kesintileri düşülerek net tutar gösterilir">
-          <input type="checkbox" id="budgetNetToggle" style="width:auto;" onchange="toggleBudgetNet(this.checked)">
-          🔒 Avans &amp; teminat kesintileri hariç
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-left:auto;white-space:nowrap;" title="KDV ve KDV dahil toplam sütunlarını göster/gizle">
+          <input type="checkbox" id="budgetKdvToggle" style="width:auto;" onchange="toggleBudgetKdv(this.checked)">
+          KDV dahil sütunları göster
         </label>
       </div>
       <div style="overflow-x: auto;">
@@ -946,10 +947,10 @@ body.view-mode .lock-status * {
               <th class="right" rowspan="2">Miktar</th>
               <th class="center" rowspan="2">Birim</th>
               <th class="right" rowspan="2">B.Fiyat</th>
-              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Baz Bütçe</th>
+              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Baz Bütçe (KDV hariç)</th>
+              <th class="right kdv-col" colspan="3" style="border-bottom: 1px solid var(--border); background: rgba(47,107,72,0.05);">KDV Dahil</th>
               <th class="right" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(184,134,61,0.06);">Revize Bütçe</th>
               <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Gerçekleşme</th>
-              <th class="right" rowspan="2" style="background: rgba(30,58,95,0.05);" title="Hesap koduna bağlı teminat tipli + avans etiketli kesintiler">Kesinti<br><span style="font-size:9px;color:var(--text-muted);">Tem+Avans TL</span></th>
               <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Kalan</th>
               <th class="center" rowspan="2">Durum</th>
               <th class="center" rowspan="2"></th>
@@ -957,6 +958,9 @@ body.view-mode .lock-status * {
             <tr>
               <th class="right" style="font-size: 10px; color: var(--text-muted);">USD</th>
               <th class="right" style="font-size: 10px; color: var(--text-muted);">TL</th>
+              <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">KDV %</th>
+              <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">Dahil USD</th>
+              <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">Dahil TL</th>
               <th class="right" style="font-size: 10px; color: var(--accent); background: rgba(184,134,61,0.06);">USD</th>
               <th class="right" style="font-size: 10px; color: var(--accent); background: rgba(184,134,61,0.06);">TL</th>
               <th class="right" style="font-size: 10px; color: #2f6b48;">USD</th>
@@ -1588,6 +1592,18 @@ body.view-mode .lock-status * {
           </div>
         </div>
       </div>
+      <div class="form-row form-row-2">
+        <div class="form-field">
+          <label>KDV Oranı (%)</label>
+          <select id="bm-kdvRate">
+            <option value="20">%20 (genel)</option>
+            <option value="10">%10</option>
+            <option value="1">%1</option>
+            <option value="0">%0 (istisna)</option>
+          </select>
+        </div>
+        <div class="form-field"></div>
+      </div>
     </div>
 
     <!-- Ana kategori notu -->
@@ -1876,7 +1892,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v3.5 (01.06)';
+const APP_BUILD = 'v3.6 (01.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -2375,6 +2391,12 @@ function applyProjectMigrations(p) {
   });
   p.teminatMektuplari = p.teminatMektuplari || [];
   p.settings.uyariConfig = p.settings.uyariConfig || { browser: false, email: false, serviceId: '', templateId: '', publicKey: '', toEmail: '' };
+  if (p.settings.defaultKdvRate == null) p.settings.defaultKdvRate = 20;
+  // Yaprak kalemlere KDV oranı varsayılanı (yoksa)
+  p.budget = (p.budget || []).map(b => {
+    if (b.kdvRate === undefined) return { ...b, kdvRate: 20 };
+    return b;
+  });
   p.budget = (p.budget || []).map(b => ({ ...b, currency: b.currency || 'USD' }));
   // ID onarımı: eksik / mükerrer / sayısal id'leri düzelt (bozuk Excel import'larından)
   {
@@ -3082,6 +3104,56 @@ function getBudgetItemTotalTry(b) {
   return getLeafItemTry(b);
 }
 
+// ============================================================
+// REVİZE BÜTÇE — alt kalemlerden toplanır
+// ============================================================
+// Bir kalemin efektif revize USD'si: kendi revizesi varsa o, yoksa baz.
+// Ana kategori: alt kalemlerin (revize varsa revize, yoksa baz) toplamı.
+function getEffectiveRevisedUsd(b) {
+  if (!isBudgetLeaf(b)) {
+    return getDescendantLeaves(b).reduce((sum, leaf) =>
+      sum + (leaf.revisedBudgetUsd != null ? leaf.revisedBudgetUsd : getLeafItemUsd(leaf)), 0);
+  }
+  return b.revisedBudgetUsd != null ? b.revisedBudgetUsd : getLeafItemUsd(b);
+}
+
+// Bir kalemin/ağacın altında gerçekten revize edilmiş kalem var mı?
+function hasRevisionInTree(b) {
+  if (isBudgetLeaf(b)) return b.revisedBudgetUsd != null;
+  return getDescendantLeaves(b).some(leaf => leaf.revisedBudgetUsd != null);
+}
+
+// ============================================================
+// KDV — kalem bazında oran (varsayılan %20)
+// ============================================================
+function getItemKdvRate(b) {
+  // Yaprak: kendi oranı (yoksa proje varsayılanı, o da yoksa %20)
+  if (isBudgetLeaf(b)) {
+    if (b.kdvRate != null) return b.kdvRate;
+    return state.settings.defaultKdvRate != null ? state.settings.defaultKdvRate : 20;
+  }
+  return null; // ana kategoride tek oran yok (alt kalemler farklı olabilir)
+}
+
+// KDV tutarı USD (ağırlıklı — her yaprak kendi oranıyla)
+function getBudgetItemKdvUsd(b) {
+  if (!isBudgetLeaf(b)) {
+    return getDescendantLeaves(b).reduce((sum, leaf) => sum + getBudgetItemKdvUsd(leaf), 0);
+  }
+  const rate = getItemKdvRate(b);
+  return getLeafItemUsd(b) * (rate / 100);
+}
+function getBudgetItemKdvTry(b) {
+  if (!isBudgetLeaf(b)) {
+    return getDescendantLeaves(b).reduce((sum, leaf) => sum + getBudgetItemKdvTry(leaf), 0);
+  }
+  const rate = getItemKdvRate(b);
+  return getLeafItemTry(b) * (rate / 100);
+}
+// KDV dahil toplam
+function getBudgetItemGrossUsd(b) { return getBudgetItemTotalUsd(b) + getBudgetItemKdvUsd(b); }
+function getBudgetItemGrossTry(b) { return getBudgetItemTotalTry(b) + getBudgetItemKdvTry(b); }
+
 
 // Bir ana kategorinin alt kalemlerinin iş programı tarihlerinden başlangıç/bitiş türet
 function getDerivedProgramRange(b) {
@@ -3321,12 +3393,14 @@ function isRootBudgetItem(b) {
 // ============================================================
 // NET GÖRÜNÜM — Avans & teminat kesintileri hariç gerçekleşme
 // ============================================================
-let budgetNetGorunum = false;
+let budgetKdvGorunum = false;
 
-function toggleBudgetNet(v) {
-  budgetNetGorunum = v;
-  renderBudgetTable();
-  reapplyFilters();
+function toggleBudgetKdv(v) {
+  budgetKdvGorunum = v;
+  const wrap = document.querySelector('[data-tab-content="butce"] .data-table');
+  // Tablo container'ına class ekle/çıkar
+  const table = document.querySelector('[data-tab-content="butce"] table.data-table');
+  if (table) table.classList.toggle('kdv-hidden', !v);
 }
 
 // Bu bütçe kalemine (kod örtüşmesiyle) bağlı teminat tipli + avans etiketli kesintilerin TL toplamı
@@ -3881,7 +3955,8 @@ function renderBudgetTable() {
   const fx = getCurrentFx();
   let totalBaseUsd=0, totalBaseTry=0, totalRevUsd=0, totalRevTry=0;
   let hasAnyRevise = false; // gerçekten revize girilmiş kalem var mı?
-  let totalActUsd=0, totalActTry=0, totalRemUsd=0, totalRemTry=0, totalKesTL=0;
+  let totalActUsd=0, totalActTry=0, totalRemUsd=0, totalRemTry=0;
+  let totalKdvUsd=0, totalKdvTry=0, totalGrossUsd=0, totalGrossTry=0;
 
   sorted.forEach(b => {
     const isLeaf = isBudgetLeaf(b);
@@ -3890,29 +3965,33 @@ function renderBudgetTable() {
     const baseTry = getBudgetItemTotalTry(b);
     let actUsd  = getBudgetItemActualUsd(b);
     let actTry  = getBudgetItemActualTry(b);
-    const kesTL = getBudgetItemTeminatAvansTL(b);
-    if (budgetNetGorunum && kesTL > 0) {
-      actTry = Math.max(0, actTry - kesTL);
-      actUsd = Math.max(0, actUsd - (fx > 0 ? kesTL / fx : 0));
-    }
-    const revUsd  = b.revisedBudgetUsd != null ? b.revisedBudgetUsd : null;
-    const effUsd  = revUsd != null ? revUsd : baseUsd;
-    const effTry  = revUsd != null ? revUsd * fx : baseTry;
+    // KDV
+    const kdvUsd = getBudgetItemKdvUsd(b);
+    const kdvTry = getBudgetItemKdvTry(b);
+    const grossUsd = baseUsd + kdvUsd;
+    const grossTry = baseTry + kdvTry;
+    const kdvRate = getItemKdvRate(b); // yaprak: sayı, ana kategori: null
+    // Revize — alt kalemlerden toplanır
+    const ownRev = b.revisedBudgetUsd != null;           // bu kalemin kendi revizesi var mı
+    const treeRev = hasRevisionInTree(b);                 // bu kalemde/altında revize var mı
+    const effRevUsd = getEffectiveRevisedUsd(b);          // efektif revize USD (alt kalemlerden)
+    const effUsd  = treeRev ? effRevUsd : baseUsd;
+    const effTry  = treeRev ? effRevUsd * fx : baseTry;
     const remUsd  = effUsd - actUsd;
     const remTry  = effTry - actTry;
 
     if (isRootBudgetItem(b)) {
       totalBaseUsd += baseUsd; totalBaseTry += baseTry;
-      const revE = revUsd != null ? revUsd : baseUsd;
-      if (revUsd != null) hasAnyRevise = true;
-      totalRevUsd += revE; totalRevTry += revE * fx;
+      if (treeRev) hasAnyRevise = true;
+      totalRevUsd += effUsd; totalRevTry += effTry;
       totalActUsd += actUsd; totalActTry += actTry;
       totalRemUsd += remUsd; totalRemTry += remTry;
-      totalKesTL += kesTL;
+      totalKdvUsd += kdvUsd; totalKdvTry += kdvTry;
+      totalGrossUsd += grossUsd; totalGrossTry += grossTry;
     }
 
     const asilmis = actUsd > effUsd + 0.01;
-    const revize  = revUsd != null;
+    const revize  = treeRev;
     let statusHtml;
     if (asilmis) statusHtml = `<span class="badge" style="background:#fdecea;color:#a44132;border:1px solid #f5c6c6;">⚠ Aşım</span>`;
     else if (revize) statusHtml = `<span class="badge" style="background:rgba(184,134,61,0.15);color:#7a5a1a;border:1px solid rgba(184,134,61,0.4);">🔄 Revize</span>`;
@@ -3946,9 +4025,10 @@ function renderBudgetTable() {
     const qtyCell   = isLeaf ? (effectiveQty ? fmtNum(effectiveQty,0) + ((!b.qty || b.qty===0) && b.unitPrice>0 ? '<span style="font-size:9px;color:var(--text-muted);margin-left:2px;">lump</span>' : '') : '—') : '<span style="color:var(--text-muted);font-size:11px;">∑</span>';
     const unitCell  = isLeaf ? (b.unit || '—') : '—';
     const priceCell = isLeaf ? `${b.unitPrice ? fmtNum(b.unitPrice,0) : '—'}${ccyBadge}` : '<span style="color:var(--text-muted);font-size:11px;">alt kalemler</span>';
-    const revUsdCell = revUsd != null ? `<span style="color:var(--accent);font-weight:600;">${fmtUSD(revUsd)}</span>` : '<span style="color:var(--text-muted);">—</span>';
-    const revTryCell = revUsd != null ? `<span style="color:var(--accent);">${fmtTL(revUsd*fx)}</span>` : '<span style="color:var(--text-muted);">—</span>';
+    const revUsdCell = treeRev ? `<span style="color:var(--accent);font-weight:600;">${fmtUSD(effRevUsd)}</span>` : '<span style="color:var(--text-muted);">—</span>';
+    const revTryCell = treeRev ? `<span style="color:var(--accent);">${fmtTL(effRevUsd*fx)}</span>` : '<span style="color:var(--text-muted);">—</span>';
     const remColor = remUsd < -0.01 ? 'color:#a44132;font-weight:600;' : (remUsd < effUsd*0.1 ? 'color:#b86800;' : '');
+    const kdvRateCell = isLeaf ? `${kdvRate}%` : '<span style="color:var(--text-muted);font-size:10px;">∑</span>';
 
     tr.innerHTML = `
       <td class="mono" style="font-size:12px;">${b.code}</td>
@@ -3960,11 +4040,13 @@ function renderBudgetTable() {
       <td class="right">${priceCell}</td>
       <td class="right">${fmtUSD(baseUsd)}</td>
       <td class="right" style="color:var(--text-muted);">${fmtTL(baseTry)}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;font-size:11px;">${kdvRateCell}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtUSD(grossUsd)}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtTL(grossTry)}</td>
       <td class="right" style="background:rgba(184,134,61,0.04);">${revUsdCell}</td>
       <td class="right" style="background:rgba(184,134,61,0.04);">${revTryCell}</td>
       <td class="right" style="color:#2f6b48;">${actUsd>0?fmtUSD(actUsd):'—'}</td>
       <td class="right" style="color:#2f6b48;">${actTry>0?fmtTL(actTry):'—'}</td>
-      <td class="right" style="background:rgba(30,58,95,0.04);color:var(--primary);" title="Teminat + avans kesintileri (hesap kodu eşleşmesi)">${kesTL > 0 ? '🔒 ' + fmtTL(kesTL) : '—'}</td>
       <td class="right" style="${remColor}">${fmtUSD(remUsd)}</td>
       <td class="right" style="${remColor}">${fmtTL(remTry)}</td>
       <td class="center">${statusHtml}</td>
@@ -3986,11 +4068,13 @@ function renderBudgetTable() {
       <td colspan="7" style="font-weight:700;color:var(--primary);">📊 PROJE TOPLAMI</td>
       <td class="right">${fmtUSD(totalBaseUsd)}</td>
       <td class="right" style="color:var(--text-muted);">${fmtTL(totalBaseTry)}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;font-size:10px;">—</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtUSD(totalGrossUsd)}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtTL(totalGrossTry)}</td>
       <td class="right" style="background:rgba(184,134,61,0.04);color:var(--accent);">${hasAnyRevise ? fmtUSD(totalRevUsd) : '—'}</td>
       <td class="right" style="background:rgba(184,134,61,0.04);color:var(--accent);">${hasAnyRevise ? fmtTL(totalRevTry) : '—'}</td>
       <td class="right" style="color:#2f6b48;">${totalActUsd>0?fmtUSD(totalActUsd):'—'}</td>
       <td class="right" style="color:#2f6b48;">${totalActTry>0?fmtTL(totalActTry):'—'}</td>
-      <td class="right" style="background:rgba(30,58,95,0.04);color:var(--primary);">${totalKesTL > 0 ? '🔒 ' + fmtTL(totalKesTL) : '—'}</td>
       <td class="right" style="${totRemUsd<0?'color:#a44132;font-weight:700;':''}">${fmtUSD(totRemUsd)}</td>
       <td class="right" style="${totRemTry<0?'color:#a44132;font-weight:700;':''}">${fmtTL(totRemTry)}</td>
       <td colspan="2"></td>
@@ -4757,6 +4841,8 @@ function openBudgetModal() {
   document.getElementById('bm-unit').value = '';
   document.getElementById('bm-unitPrice').value = '';
   document.getElementById('bm-currency').value = 'USD';
+  const kdvEl = document.getElementById('bm-kdvRate');
+  if (kdvEl) kdvEl.value = String(state.settings.defaultKdvRate != null ? state.settings.defaultKdvRate : 20);
   _applyBudgetParentState(false); // seviye 5 = detay kalem, fiyat açık
   document.getElementById('budgetModal').classList.add('active');
 }
@@ -4779,6 +4865,8 @@ function editBudgetItem(id) {
   document.getElementById('bm-unit').value = b.unit || '';
   document.getElementById('bm-unitPrice').value = b.unitPrice || '';
   document.getElementById('bm-currency').value = b.currency || 'USD';
+  const kdvEl = document.getElementById('bm-kdvRate');
+  if (kdvEl) kdvEl.value = String(b.kdvRate != null ? b.kdvRate : (state.settings.defaultKdvRate != null ? state.settings.defaultKdvRate : 20));
   // Seviye 1-2 veya altında kalem varsa ana kategori
   const isParent = !isBudgetLeaf(b);
   _applyBudgetParentState(isParent);
@@ -4813,7 +4901,8 @@ async function saveBudgetItem() {
     qty: isCurrentlyLeaf ? (parseFloat(document.getElementById('bm-qty').value) || 0) : 0,
     unit: isCurrentlyLeaf ? document.getElementById('bm-unit').value.trim() : '',
     unitPrice: isCurrentlyLeaf ? (parseFloat(document.getElementById('bm-unitPrice').value) || 0) : 0,
-    currency: document.getElementById('bm-currency').value || 'USD'
+    currency: document.getElementById('bm-currency').value || 'USD',
+    kdvRate: isCurrentlyLeaf ? (parseFloat(document.getElementById('bm-kdvRate').value) || 0) : null
   };
   if (!item.code || !item.name) { alert('Kod ve kalem adı zorunlu'); return; }
   if (editingBudgetId) {
@@ -7595,6 +7684,9 @@ async function _bna_init() {
   updateStorageIndicator();
   const bb = document.getElementById('buildBadge');
   if (bb) bb.textContent = APP_BUILD;
+  // KDV sütunları varsayılan gizli
+  const bt = document.querySelector('[data-tab-content="butce"] table.data-table');
+  if (bt) bt.classList.add('kdv-hidden');
   console.log('Bütçe & Nakit Akış — build:', APP_BUILD);
   // Vade uyarı kontrolü (bildirim + günde 1 mail)
   setTimeout(checkMektupVadeUyari, 1500);
