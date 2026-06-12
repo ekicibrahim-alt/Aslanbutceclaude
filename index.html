@@ -930,6 +930,10 @@ body.view-mode .lock-status * {
         <input class="table-filter-input" type="text" placeholder="Filtrele... (kod, kalem adı, tedarikçi, tip)" oninput="filterTable('budgetTableBody', this.value, this)" id="filter-budget">
         <span class="table-filter-count" id="filter-budget-count"></span>
         <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-budget','budgetTableBody','filter-budget-count')">Temizle</button>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-left:auto;white-space:nowrap;" title="Gerçekleşme ve Kalan sütunlarında, hesap koduna bağlı teminat ve avans kesintileri düşülerek net tutar gösterilir">
+          <input type="checkbox" id="budgetNetToggle" style="width:auto;" onchange="toggleBudgetNet(this.checked)">
+          🔒 Avans &amp; teminat kesintileri hariç
+        </label>
       </div>
       <div style="overflow-x: auto;">
         <table class="data-table">
@@ -945,6 +949,7 @@ body.view-mode .lock-status * {
               <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Baz Bütçe</th>
               <th class="right" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(184,134,61,0.06);">Revize Bütçe</th>
               <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Gerçekleşme</th>
+              <th class="right" rowspan="2" style="background: rgba(30,58,95,0.05);" title="Hesap koduna bağlı teminat tipli + avans etiketli kesintiler">Kesinti<br><span style="font-size:9px;color:var(--text-muted);">Tem+Avans TL</span></th>
               <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Kalan</th>
               <th class="center" rowspan="2">Durum</th>
               <th class="center" rowspan="2"></th>
@@ -1871,7 +1876,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v3.3 (01.06)';
+const APP_BUILD = 'v3.5 (01.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -3123,7 +3128,8 @@ function getBudgetItemActualUsd(b) {
   return invoices.reduce((sum, inv) => {
     const c = calcInvoiceTotals(inv);
     const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
-    return sum + (c.grandTotal / invFx);
+    // Bütçe KDV hariç olduğu için gerçekleşme de NET (KDV/stopaj/tevkifat hariç)
+    return sum + (c.net / invFx);
   }, 0);
 }
 
@@ -3133,7 +3139,7 @@ function getBudgetItemActualTry(b) {
     return getDescendantLeaves(b).reduce((sum, leaf) => sum + getBudgetItemActualTry(leaf), 0);
   }
   const invoices = getInvoicesForBudgetItem(b);
-  return invoices.reduce((sum, inv) => sum + calcInvoiceTotals(inv).grandTotal, 0);
+  return invoices.reduce((sum, inv) => sum + calcInvoiceTotals(inv).net, 0);
 }
 
 // Revize bütçe kaydet
@@ -3312,6 +3318,33 @@ function isRootBudgetItem(b) {
   return !state.budget.some(other => other.id !== b.id && myCode.startsWith(String(other.code || '') + '.'));
 }
 
+// ============================================================
+// NET GÖRÜNÜM — Avans & teminat kesintileri hariç gerçekleşme
+// ============================================================
+let budgetNetGorunum = false;
+
+function toggleBudgetNet(v) {
+  budgetNetGorunum = v;
+  renderBudgetTable();
+  reapplyFilters();
+}
+
+// Bu bütçe kalemine (kod örtüşmesiyle) bağlı teminat tipli + avans etiketli kesintilerin TL toplamı
+function getBudgetItemTeminatAvansTL(b) {
+  const cols = (state.settings.deductionColumns || []).filter(c =>
+    c.type === 'teminat' || (c.label || '').toLowerCase().includes('avans'));
+  if (cols.length === 0) return 0;
+  const codePrefix = String(b.code || '');
+  if (!codePrefix) return 0;
+  let sum = 0;
+  (state.deductions || []).forEach(d => {
+    const dc = String(d.code || '');
+    if (dc !== codePrefix && !dc.startsWith(codePrefix + '.')) return;
+    cols.forEach(c => { sum += (d.columns && d.columns[c.key]) || 0; });
+  });
+  return sum;
+}
+
 // Bir bütçe kaleminin doğrudan alt kalemi var mı?
 function hasChildren(b) {
   return state.budget.some(other => {
@@ -3350,11 +3383,10 @@ function computeOverallProgress() {
     const invD = new Date(inv.date);
     if (invD > target) return;
     const c = calcInvoiceTotals(inv);
-    // TL gerçekleşme: faturanın genel toplamı (KDV + stopaj + tevkifat dahil)
-    totalActualTry += c.grandTotal;
-    // USD gerçekleşme: fatura tarihindeki kur ile dönüştür
+    // Bütçe KDV hariç olduğu için gerçekleşme de NET (KDV/stopaj/tevkifat hariç)
+    totalActualTry += c.net;
     const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
-    totalActualUsd += c.grandTotal / invFx;
+    totalActualUsd += c.net / invFx;
   });
   
   // Toplam bütçe TL — ağırlıklı kur (her kalemin iş programına göre)
@@ -3426,7 +3458,7 @@ function computeCategoryBreakdown() {
     const invD = new Date(inv.date);
     if (invD > target) return;
     const c = calcInvoiceTotals(inv);
-    const amtTry = c.grandTotal;
+    const amtTry = c.net;  // bütçe KDV hariç → karşılaştırma net olmalı
     const amtUsd = inv.fxRate > 0 ? amtTry / inv.fxRate : 0;
     const cat = inv.type || 'mixed';
     if (categories[cat]) {
@@ -3849,15 +3881,20 @@ function renderBudgetTable() {
   const fx = getCurrentFx();
   let totalBaseUsd=0, totalBaseTry=0, totalRevUsd=0, totalRevTry=0;
   let hasAnyRevise = false; // gerçekten revize girilmiş kalem var mı?
-  let totalActUsd=0, totalActTry=0, totalRemUsd=0, totalRemTry=0;
+  let totalActUsd=0, totalActTry=0, totalRemUsd=0, totalRemTry=0, totalKesTL=0;
 
   sorted.forEach(b => {
     const isLeaf = isBudgetLeaf(b);
     const hasKids = hasChildren(b);
     const baseUsd = getBudgetItemTotalUsd(b);
     const baseTry = getBudgetItemTotalTry(b);
-    const actUsd  = getBudgetItemActualUsd(b);
-    const actTry  = getBudgetItemActualTry(b);
+    let actUsd  = getBudgetItemActualUsd(b);
+    let actTry  = getBudgetItemActualTry(b);
+    const kesTL = getBudgetItemTeminatAvansTL(b);
+    if (budgetNetGorunum && kesTL > 0) {
+      actTry = Math.max(0, actTry - kesTL);
+      actUsd = Math.max(0, actUsd - (fx > 0 ? kesTL / fx : 0));
+    }
     const revUsd  = b.revisedBudgetUsd != null ? b.revisedBudgetUsd : null;
     const effUsd  = revUsd != null ? revUsd : baseUsd;
     const effTry  = revUsd != null ? revUsd * fx : baseTry;
@@ -3871,6 +3908,7 @@ function renderBudgetTable() {
       totalRevUsd += revE; totalRevTry += revE * fx;
       totalActUsd += actUsd; totalActTry += actTry;
       totalRemUsd += remUsd; totalRemTry += remTry;
+      totalKesTL += kesTL;
     }
 
     const asilmis = actUsd > effUsd + 0.01;
@@ -3926,6 +3964,7 @@ function renderBudgetTable() {
       <td class="right" style="background:rgba(184,134,61,0.04);">${revTryCell}</td>
       <td class="right" style="color:#2f6b48;">${actUsd>0?fmtUSD(actUsd):'—'}</td>
       <td class="right" style="color:#2f6b48;">${actTry>0?fmtTL(actTry):'—'}</td>
+      <td class="right" style="background:rgba(30,58,95,0.04);color:var(--primary);" title="Teminat + avans kesintileri (hesap kodu eşleşmesi)">${kesTL > 0 ? '🔒 ' + fmtTL(kesTL) : '—'}</td>
       <td class="right" style="${remColor}">${fmtUSD(remUsd)}</td>
       <td class="right" style="${remColor}">${fmtTL(remTry)}</td>
       <td class="center">${statusHtml}</td>
@@ -3951,6 +3990,7 @@ function renderBudgetTable() {
       <td class="right" style="background:rgba(184,134,61,0.04);color:var(--accent);">${hasAnyRevise ? fmtTL(totalRevTry) : '—'}</td>
       <td class="right" style="color:#2f6b48;">${totalActUsd>0?fmtUSD(totalActUsd):'—'}</td>
       <td class="right" style="color:#2f6b48;">${totalActTry>0?fmtTL(totalActTry):'—'}</td>
+      <td class="right" style="background:rgba(30,58,95,0.04);color:var(--primary);">${totalKesTL > 0 ? '🔒 ' + fmtTL(totalKesTL) : '—'}</td>
       <td class="right" style="${totRemUsd<0?'color:#a44132;font-weight:700;':''}">${fmtUSD(totRemUsd)}</td>
       <td class="right" style="${totRemTry<0?'color:#a44132;font-weight:700;':''}">${fmtTL(totRemTry)}</td>
       <td colspan="2"></td>
@@ -4206,6 +4246,7 @@ function computeCashflow() {
     const row = data.find(d => d.month === dueM);
     if (row) {
       const c = calcInvoiceTotals(inv);
+      // Nakit akış = gerçek para çıkışı → KDV dahil genel toplam (bütçe karşılaştırması değil)
       row.actualTry += c.grandTotal;
       const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : row.fx;
       row.actualUsd += c.grandTotal / invFx;
