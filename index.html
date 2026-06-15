@@ -2036,7 +2036,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v3.9 (14.06)';
+const APP_BUILD = 'v4.0 (15.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -6349,7 +6349,7 @@ async function importXlsx(event) {
   if (!requireEdit()) return;
   const file = event.target.files[0];
   if (!file) return;
-  if (!confirm('Excel dosyasındaki Bütçe, Faturalar, Tahsilat ve Kesintiler sekmelerindeki veriler bu sistemde yerine alınacak. Mevcut veri üzerine yazılacak. Devam edilsin mi?')) {
+  if (!confirm('Bu Excel dosyasındaki veriler mevcut verilerin üzerine yazılacak.\n\n(Sistemden indirilen Excel ise tüm veriler — revize, iş programı, kesintiler, ödemeler, teminatlar dahil — eksiksiz geri yüklenir.)\n\nDevam edilsin mi?')) {
     event.target.value = '';
     return;
   }
@@ -6357,6 +6357,41 @@ async function importXlsx(event) {
   try {
     const buffer = await file.arrayBuffer();
     const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+
+    // ── ÖNCELİK: Gizli tam-veri sayfası varsa eksiksiz geri yükle ──
+    if (wb.SheetNames.includes('_VERI')) {
+      const dataSheet = wb.Sheets['_VERI'];
+      const rows = XLSX.utils.sheet_to_json(dataSheet, { header: 1 });
+      if (rows.length > 0 && String(rows[0][0] || '').trim() === 'BNA_FULL_DATA_V1') {
+        let json = '';
+        for (let i = 1; i < rows.length; i++) {
+          if (rows[i] && rows[i][0] != null) json += String(rows[i][0]);
+        }
+        try {
+          const full = JSON.parse(json);
+          // State'i eksiksiz geri yükle
+          if (full.settings) state.settings = full.settings;
+          state.budget = full.budget || [];
+          state.invoices = full.invoices || [];
+          state.collections = full.collections || [];
+          state.deductions = full.deductions || [];
+          state.teminatMektuplari = full.teminatMektuplari || [];
+          state.avanslar = full.avanslar || [];
+          state.teminatIadeleri = full.teminatIadeleri || [];
+          state.program = full.program || {};
+          applyProjectMigrations(state);
+          await saveState();
+          renderAll();
+          event.target.value = '';
+          alert('✓ Tüm veriler eksiksiz içe aktarıldı (bütçe, revize, iş programı, faturalar, kesintiler, ödemeler, teminatlar, avanslar).');
+          return;
+        } catch (e) {
+          console.warn('_VERI parse hatası, görsel sayfalardan okumaya geçiliyor:', e);
+        }
+      }
+    }
+
+    // ── Gizli sayfa yoksa: görsel sayfalardan oku (eski yöntem) ──
     let imported = { budget: 0, invoices: 0, deductions: 0, collections: 0 };
     
     const toDate = (v) => {
@@ -8173,6 +8208,52 @@ async function exportXlsx() {
   });
 
   // ─────────────────────────────────────────────────────────────
+  // SAYFA — TAHSİLAT (görünür, düzenlenebilir)
+  // ─────────────────────────────────────────────────────────────
+  const wsColl = wb.addWorksheet('Tahsilat', { views: [{ state: 'frozen', ySplit: 1 }] });
+  wsColl.columns = [
+    { header: 'Vade Tarihi',   key: 'due',    width: 14 },
+    { header: 'Müşteri',       key: 'cust',   width: 28 },
+    { header: 'Açıklama',      key: 'desc',   width: 30 },
+    { header: 'Plan Tutar TL', key: 'plan',   width: 18, numFmt: fmt_tl },
+    { header: 'Gerç. Tarihi',  key: 'rdate',  width: 14 },
+    { header: 'Gerç. Tutar TL',key: 'ramount',width: 18, numFmt: fmt_tl },
+    { header: 'Durum',         key: 'status', width: 14 },
+  ];
+  const hdrColl = wsColl.getRow(1);
+  hdrColl.height = 24;
+  hdrColl.eachCell(cell => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.headerBg } };
+    cell.font = { bold: true, color: { argb: C.white }, size: 10 };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = { bottom: { style: 'medium', color: { argb: C.amber } } };
+  });
+  (state.collections || []).forEach(c => {
+    const row = wsColl.addRow({
+      due: c.dueDate || '', cust: c.customer || '', desc: c.desc || '',
+      plan: c.planAmount || 0, rdate: c.actualDate || '',
+      ramount: c.actualAmount || 0,
+      status: c.status === 'received' ? 'Tahsil Edildi' : (c.status === 'partial' ? 'Kısmi' : 'Bekliyor')
+    });
+    row.height = 16;
+    row.eachCell({ includeEmpty: true }, (cell, colNo) => {
+      cell.font = { size: 9 };
+      cell.border = { bottom: { style: 'thin', color: { argb: C.border } } };
+      if (colNo === 4 || colNo === 6) cell.alignment = { horizontal: 'right' };
+    });
+  });
+  // Toplam
+  if ((state.collections || []).length > 0) {
+    const totPlan = state.collections.reduce((s,c)=>s+(c.planAmount||0),0);
+    const totReal = state.collections.reduce((s,c)=>s+(c.actualAmount||0),0);
+    const tr = wsColl.addRow({ due:'', cust:'TOPLAM', desc:'', plan: totPlan, rdate:'', ramount: totReal, status:'' });
+    tr.eachCell({ includeEmpty: true }, cell => {
+      cell.font = { bold: true, size: 10 };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.navyLight } };
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // SAYFA 6 — ÖZET
   // ─────────────────────────────────────────────────────────────
   const wsOzet = wb.addWorksheet('Özet');
@@ -8229,6 +8310,33 @@ async function exportXlsx() {
     row.getCell(4).numFmt = fmt_pct;
     row.eachCell(cell => { cell.font = { size: 10 }; cell.border = { bottom: { style: 'thin', color: { argb: C.border } } }; });
   });
+
+  // ─────────────────────────────────────────────────────────────
+  // GİZLİ TAM-VERİ SAYFASI — round-trip için sıfır kayıp
+  // Tüm proje state'i JSON olarak. İçe aktarmada bu sayfa öncelikli okunur.
+  // ─────────────────────────────────────────────────────────────
+  const wsData = wb.addWorksheet('_VERI');
+  wsData.state = 'veryHidden'; // kullanıcıya görünmez
+  const fullState = {
+    settings: state.settings,
+    budget: state.budget,
+    invoices: state.invoices,
+    collections: state.collections,
+    deductions: state.deductions,
+    teminatMektuplari: state.teminatMektuplari || [],
+    avanslar: state.avanslar || [],
+    teminatIadeleri: state.teminatIadeleri || [],
+    program: state.program || {}
+  };
+  const json = JSON.stringify(fullState);
+  // Tek hücreye sığmayabilir (32767 char limiti) — parçalara böl
+  wsData.getCell('A1').value = 'BNA_FULL_DATA_V1';
+  const CHUNK = 30000;
+  let rowIdx = 2, pos = 0;
+  while (pos < json.length) {
+    wsData.getCell('A' + rowIdx).value = json.substring(pos, pos + CHUNK);
+    pos += CHUNK; rowIdx++;
+  }
 
   // ─────────────────────────────────────────────────────────────
   // İNDİR
