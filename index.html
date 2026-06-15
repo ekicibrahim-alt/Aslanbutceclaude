@@ -2036,7 +2036,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v4.0 (15.06)';
+const APP_BUILD = 'v4.1 (15.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -2538,6 +2538,10 @@ function applyProjectMigrations(p) {
   });
   p.teminatMektuplari = p.teminatMektuplari || [];
   p.avanslar = p.avanslar || [];
+  p.avanslar = p.avanslar.map(a => {
+    if (!a.girisler) return { ...a, girisler: [{ tarih: a.tarih, tutar: a.tutar, not: a.not || '' }] };
+    return a;
+  });
   p.teminatIadeleri = p.teminatIadeleri || [];
   p.settings.uyariConfig = p.settings.uyariConfig || { browser: false, email: false, serviceId: '', templateId: '', publicKey: '', toEmail: '' };
   if (p.settings.defaultKdvRate == null) p.settings.defaultKdvRate = 20;
@@ -4880,8 +4884,12 @@ function filterTable(tbodyId, q, inputEl) {
   const term = q.trim().toLowerCase();
   let visible = 0, total = 0;
 
+  // Önceki ara toplam satırını temizle
+  Array.from(tbody.querySelectorAll('tr[data-subtotal-row]')).forEach(tr => tr.remove());
+
+  const visibleRows = [];
   Array.from(tbody.rows).forEach(tr => {
-    // Toplam satırı — her zaman göster
+    // Toplam satırı — her zaman göster, sayma
     if (tr.style.fontWeight === '700' || tr.cells[0]?.textContent?.includes('TOPLAM') || tr.cells[0]?.textContent?.includes('PROJE')) {
       tr.classList.remove('row-hidden');
       return;
@@ -4892,24 +4900,71 @@ function filterTable(tbodyId, q, inputEl) {
       visible++;
       return;
     }
-    // Tüm hücrelerin text içeriğinde ara
     const rowText = Array.from(tr.cells).map(td => td.textContent).join(' ').toLowerCase();
     if (rowText.includes(term)) {
       tr.classList.remove('row-hidden');
       visible++;
+      visibleRows.push(tr);
     } else {
       tr.classList.add('row-hidden');
     }
   });
 
   // Sayaç güncelle
-  const countId = inputEl ? inputEl.id.replace('filter-', 'filter-') + '-count' : null;
+  const countId = inputEl ? inputEl.id + '-count' : null;
   if (countId) {
     const countEl = document.getElementById(countId);
-    if (countEl) {
-      countEl.textContent = term ? `${visible} / ${total} kayıt` : (total > 0 ? `${total} kayıt` : '');
-    }
+    if (countEl) countEl.textContent = term ? `${visible} / ${total} kayıt` : (total > 0 ? `${total} kayıt` : '');
   }
+
+  // Filtre aktifse: görünen satırların sayısal sütunlarını topla → ara toplam satırı
+  if (term && visibleRows.length > 0) {
+    const colCount = visibleRows[0].cells.length;
+    const sums = new Array(colCount).fill(null); // null = sayısal değil
+    visibleRows.forEach(tr => {
+      Array.from(tr.cells).forEach((td, i) => {
+        const num = parseCellNumber(td.textContent);
+        if (num !== null) sums[i] = (sums[i] || 0) + num;
+      });
+    });
+    // Ara toplam satırı oluştur
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-subtotal-row', '1');
+    tr.style.cssText = 'font-weight:600;background:rgba(184,134,61,0.10);border-top:1px dashed var(--accent);';
+    let html = '';
+    for (let i = 0; i < colCount; i++) {
+      if (i === 0) { html += `<td style="font-weight:700;color:var(--accent);">⊂ Filtrelenen (${visible})</td>`; continue; }
+      if (sums[i] !== null) {
+        // Hücrenin orijinal formatını (₺ mı $ mı) yakala
+        const sample = visibleRows[0].cells[i]?.textContent || '';
+        const isUsd = sample.includes('$');
+        const isTl = sample.includes('₺');
+        let txt = fmtNum(sums[i], 0);
+        if (isUsd) txt = fmtUSD(sums[i]);
+        else if (isTl) txt = fmtTL(sums[i]);
+        html += `<td class="right" style="color:var(--accent);">${txt}</td>`;
+      } else {
+        html += '<td></td>';
+      }
+    }
+    tr.innerHTML = html;
+    tbody.appendChild(tr);
+  }
+}
+
+// Hücre metnindeki PARA değerini parse et — sadece ₺ veya $ içerenler.
+// Ekran TR formatlı: nokta=binlik, virgül=ondalık. Kod, tarih, adet TOPLANMAZ.
+function parseCellNumber(text) {
+  if (!text) return null;
+  const t = String(text).trim();
+  if (t === '—' || !/\d/.test(t)) return null;
+  if (!t.includes('₺') && !t.includes('$')) return null;
+  if (t.includes('%')) return null;
+  // ₺ $ boşluk temizle, sonra TR format: nokta binlik kaldır, virgül ondalık yap
+  let cleaned = t.replace(/[₺$\s]/g, '').replace(/\./g, '').replace(',', '.');
+  // Eksi işareti koru
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? null : num;
 }
 
 function clearFilter(inputId, tbodyId, countId) {
@@ -6680,21 +6735,40 @@ function renderAvansTable() {
     const mahsup = avansMahsupToplam(av);
     const kalan = (av.tutar || 0) - mahsup;
     totVer += av.tutar || 0; totMah += mahsup; totKal += kalan;
+    const girisSayisi = (av.girisler && av.girisler.length) || 1;
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeHtml(av.supplier || '—')}</td>
       <td class="mono">${av.code || '—'}</td>
-      <td class="center">${av.tarih ? fmtDate(av.tarih) : '—'}</td>
+      <td class="center">${av.tarih ? fmtDate(av.tarih) : '—'}${girisSayisi > 1 ? ` <span style="font-size:10px;color:var(--text-muted);">(${girisSayisi} giriş)</span>` : ''}</td>
       <td class="right" style="font-weight:600;">${fmtTL(av.tutar || 0)}</td>
       <td class="right" style="color:#2f6b48;">${mahsup > 0 ? fmtTL(mahsup) : '—'}</td>
       <td class="right" style="font-weight:600;color:${kalan > 0.01 ? '#b86800' : '#2f6b48'};">${fmtTL(kalan)}</td>
       <td style="font-size:11px;color:var(--text-muted);">${escapeHtml(av.not || '')}</td>
       <td class="center" style="white-space:nowrap;">
+        <button class="btn btn-ghost" style="font-size:11px;padding:2px 6px;color:#2f6b48;" onclick="addAvansToPool('${av.id}')" title="Bu firma+işe yeni avans ekle">+ Avans</button>
         <button class="btn btn-icon btn-ghost" onclick="editAvans('${av.id}')">Düzenle</button>
         <button class="btn btn-danger" onclick="deleteAvans('${av.id}')">Sil</button>
       </td>
     `;
     tbody.appendChild(tr);
+
+    // Giriş tarihçesi (birden fazla giriş varsa)
+    if (av.girisler && av.girisler.length > 1) {
+      const grow = document.createElement('tr');
+      grow.style.cssText = 'background:rgba(47,107,72,0.03);';
+      let gh = '<td colspan="8" style="padding:4px 16px 8px 40px;"><span style="font-size:11px;color:var(--text-muted);">Avans girişleri:</span> ';
+      gh += '<span style="display:inline-flex;flex-wrap:wrap;gap:6px;margin-left:8px;">';
+      av.girisler.forEach((g, gi) => {
+        gh += `<span style="padding:2px 8px;background:var(--surface);border:1px solid var(--border);border-radius:4px;font-size:11px;">
+          ${fmtTL(g.tutar)} <span style="color:var(--text-muted);">${fmtDate(g.tarih)}</span>
+          <button onclick="deleteAvansGiris('${av.id}',${gi})" style="background:none;border:none;cursor:pointer;color:#a44132;font-size:13px;padding:0 0 0 4px;" title="Bu girişi sil">×</button>
+        </span>`;
+      });
+      gh += '</span></td>';
+      grow.innerHTML = gh;
+      tbody.appendChild(grow);
+    }
   });
   const tr = document.createElement('tr');
   tr.style.cssText = 'font-weight:700;background:rgba(30,58,95,0.06);border-top:2px solid var(--border-strong);';
@@ -6739,19 +6813,39 @@ async function saveAvans() {
   const supplier = document.getElementById('av-supplier').value.trim();
   const tutar = parseDecimal(document.getElementById('av-tutar').value);
   const tarih = document.getElementById('av-tarih').value;
+  const code = document.getElementById('av-code').value.trim();
+  const not = document.getElementById('av-not').value.trim();
   if (!supplier) { alert('Tedarikçi zorunlu'); return; }
   if (!tutar || tutar <= 0) { alert('Avans tutarı zorunlu'); return; }
   if (!tarih) { alert('Tarih zorunlu'); return; }
-  const item = {
-    id: editingAvansId || ('av_' + Date.now()),
-    supplier, code: document.getElementById('av-code').value.trim(),
-    tutar, tarih, not: document.getElementById('av-not').value.trim()
-  };
   if (!state.avanslar) state.avanslar = [];
+
+  const giris = { tarih, tutar, not };
+
   if (editingAvansId) {
+    // Mevcut havuzu düzenleme — tüm girişi tek girişe indirger (basit düzeltme)
     const idx = state.avanslar.findIndex(a => String(a.id) === String(editingAvansId));
-    if (idx >= 0) state.avanslar[idx] = item;
-  } else state.avanslar.push(item);
+    if (idx >= 0) {
+      state.avanslar[idx].supplier = supplier;
+      state.avanslar[idx].code = code;
+      // Düzenlemede: tek giriş varsa onu güncelle, çoksa uyar
+      if (!state.avanslar[idx].girisler) state.avanslar[idx].girisler = [{ tarih: state.avanslar[idx].tarih, tutar: state.avanslar[idx].tutar, not: state.avanslar[idx].not }];
+      if (state.avanslar[idx].girisler.length === 1) {
+        state.avanslar[idx].girisler[0] = giris;
+      }
+      state.avanslar[idx].tutar = state.avanslar[idx].girisler.reduce((s,x)=>s+(x.tutar||0),0);
+    }
+  } else {
+    // Yeni giriş: aynı firma+iş havuzu var mı?
+    const mevcut = state.avanslar.find(a => a.supplier === supplier && (a.code||'') === code);
+    if (mevcut) {
+      if (!mevcut.girisler) mevcut.girisler = [{ tarih: mevcut.tarih, tutar: mevcut.tutar, not: mevcut.not }];
+      mevcut.girisler.push(giris);
+      mevcut.tutar = mevcut.girisler.reduce((s,x)=>s+(x.tutar||0),0);
+    } else {
+      state.avanslar.push({ id: 'av_' + Date.now(), supplier, code, tutar, tarih, not, girisler: [giris] });
+    }
+  }
   closeAvansModal();
   await saveState();
   renderAll();
@@ -6761,6 +6855,40 @@ async function deleteAvans(id) {
   if (!requireEdit()) return;
   if (!confirm('Bu avans kaydı silinecek. Onaylıyor musun?')) return;
   state.avanslar = (state.avanslar || []).filter(a => String(a.id) !== String(id));
+  await saveState();
+  renderAll();
+}
+
+// Mevcut firma+iş havuzuna yeni avans girişi ekle
+function addAvansToPool(id) {
+  if (!requireEdit()) return;
+  const av = (state.avanslar || []).find(a => String(a.id) === String(id));
+  if (!av) return;
+  editingAvansId = null;
+  document.getElementById('avansModalTitle').textContent = `${av.supplier} — Yeni Avans Girişi`;
+  document.getElementById('av-supplier').value = av.supplier || '';
+  document.getElementById('av-code').value = av.code || '';
+  document.getElementById('av-tutar').value = '';
+  document.getElementById('av-tarih').value = new Date().toISOString().substring(0,10);
+  document.getElementById('av-not').value = '';
+  document.getElementById('avansModal').classList.add('active');
+}
+
+async function deleteAvansGiris(avId, girisIdx) {
+  if (!requireEdit()) return;
+  const av = (state.avanslar || []).find(a => String(a.id) === String(avId));
+  if (!av || !av.girisler) return;
+  const g = av.girisler[girisIdx];
+  if (!g) return;
+  if (!confirm(`${fmtTL(g.tutar)} tutarındaki avans girişi silinecek. Onaylıyor musun?`)) return;
+  av.girisler.splice(girisIdx, 1);
+  if (av.girisler.length === 0) {
+    // Hiç giriş kalmazsa havuzu sil
+    state.avanslar = state.avanslar.filter(a => String(a.id) !== String(avId));
+  } else {
+    av.tutar = av.girisler.reduce((s,x)=>s+(x.tutar||0),0);
+    av.tarih = av.girisler[0].tarih;
+  }
   await saveState();
   renderAll();
 }
@@ -6809,13 +6937,31 @@ function renderTeminatHavuz() {
       <td class="mono">${g.code || '—'}</td>
       <td class="center"><span class="tag" style="color:${tipColor};">${tipLabel[g.altTip] || g.altTip}</span></td>
       <td class="right" style="font-weight:600;">${fmtTL(g.kesilen)}</td>
-      <td class="right" style="color:#2f6b48;">${iade > 0 ? fmtTL(iade) : '—'}</td>
+      <td class="right" style="color:#2f6b48;">${iade > 0 ? fmtTL(iade) + ` <button class="btn btn-ghost" style="font-size:10px;padding:1px 4px;" onclick="manageIadeler('${escapeHtml(g.supplier)}','${g.code}','${g.altTip}')" title="İadeleri düzenle/sil">✎</button>` : '—'}</td>
       <td class="right" style="font-weight:600;color:${havuz > 0.01 ? '#1e3a5f' : '#2f6b48'};">${fmtTL(havuz)}</td>
       <td class="center">
         ${havuz > 0.01 ? `<button class="btn btn-ghost" style="font-size:11px;color:#2f6b48;" onclick="iadeEtTeminat('${escapeHtml(g.supplier)}','${g.code}','${g.altTip}',${havuz})">✓ İade Et</button>` : '<span style="font-size:11px;color:var(--text-muted);">Tamamlandı</span>'}
       </td>
     `;
     tbody.appendChild(tr);
+
+    // İade geçmişi satırı (varsa)
+    const iadeList = (state.teminatIadeleri || []).filter(t => t.supplier === g.supplier && (t.code || '') === g.code && (t.altTip || 'gecici_nakit') === g.altTip);
+    if (iadeList.length > 0) {
+      const irow = document.createElement('tr');
+      irow.style.cssText = 'background:rgba(47,107,72,0.04);';
+      let ih = '<td colspan="7" style="padding:4px 16px 8px 40px;"><span style="font-size:11px;color:var(--text-muted);">İade geçmişi:</span> ';
+      ih += '<span style="display:inline-flex;flex-wrap:wrap;gap:6px;margin-left:8px;">';
+      iadeList.forEach(t => {
+        ih += `<span style="padding:2px 8px;background:var(--surface);border:1px solid var(--border);border-radius:4px;font-size:11px;">
+          ${fmtTL(t.tutar)} <span style="color:var(--text-muted);">${fmtDate(t.tarih)}</span>
+          <button onclick="deleteIade('${t.id}')" style="background:none;border:none;cursor:pointer;color:#a44132;font-size:13px;padding:0 0 0 4px;" title="Bu iadeyi sil">×</button>
+        </span>`;
+      });
+      ih += '</span></td>';
+      irow.innerHTML = ih;
+      tbody.appendChild(irow);
+    }
   });
   const tr = document.createElement('tr');
   tr.style.cssText = 'font-weight:700;background:rgba(30,58,95,0.06);border-top:2px solid var(--border-strong);';
@@ -6852,6 +6998,38 @@ async function iadeEtTeminat(supplier, code, altTip, tutar) {
   await saveState();
   renderAll();
   alert(`✓ ${fmtTL(iadeTutar)} teminat iadesi kaydedildi — nakit akışında çıkış olarak görünecek`);
+}
+
+async function deleteIade(id) {
+  if (!requireEdit()) return;
+  const t = (state.teminatIadeleri || []).find(x => String(x.id) === String(id));
+  if (!t) return;
+  if (!confirm(`${fmtTL(t.tutar)} tutarındaki iade kaydı silinecek — tutar tekrar havuza dönecek. Onaylıyor musun?`)) return;
+  state.teminatIadeleri = state.teminatIadeleri.filter(x => String(x.id) !== String(id));
+  await saveState();
+  renderAll();
+}
+
+async function manageIadeler(supplier, code, altTip) {
+  if (!requireEdit()) return;
+  const list = (state.teminatIadeleri || []).filter(t => t.supplier === supplier && (t.code || '') === (code || '') && (t.altTip || 'gecici_nakit') === altTip);
+  if (list.length === 0) return;
+  // Tek iade varsa düzelt; çoksa hangisini sileceğini iade geçmişindeki × ile yapsın
+  if (list.length === 1) {
+    const t = list[0];
+    const yeni = prompt(`İade tutarını düzelt (TL):\n(0 girersen iade silinir)`, t.tutar.toFixed(2));
+    if (yeni === null) return;
+    const v = parseDecimal(yeni);
+    if (!v || v <= 0) {
+      state.teminatIadeleri = state.teminatIadeleri.filter(x => String(x.id) !== String(t.id));
+    } else {
+      t.tutar = v;
+    }
+    await saveState();
+    renderAll();
+  } else {
+    alert('Birden fazla iade var. Düzeltmek için iade geçmişindeki × butonuyla yanlış kaydı sil, sonra doğrusunu "İade Et" ile gir.');
+  }
 }
 
 // ============================================================
