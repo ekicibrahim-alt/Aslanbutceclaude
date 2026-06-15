@@ -953,7 +953,8 @@ body.view-mode .lock-status * {
               <th class="right kdv-col" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(47,107,72,0.05);">Revize KDV Dahil</th>
               <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Gerçekleşme</th>
               <th class="right kdv-col" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(47,107,72,0.05);">Gerç. KDV Dahil</th>
-              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Kalan</th>
+              <th class="right" rowspan="2" style="background: rgba(184,134,61,0.08);" title="Bu kalemden 3. tarafa (yemekçi, İSG vb) yansıtılan tutar — bu kalemde harcanmış sayılır">Yansıtılan<br><span style="font-size:9px;color:var(--text-muted);">TL</span></th>
+              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Gerçek Kalan</th>
               <th class="right kdv-col" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(47,107,72,0.05);">Kalan KDV Dahil</th>
               <th class="center" rowspan="2">Durum</th>
               <th class="center" rowspan="2"></th>
@@ -1081,7 +1082,8 @@ body.view-mode .lock-status * {
       <strong>Taşeron Kesintileri</strong> — kesintiler artık <strong>fatura/hakediş üzerinden</strong> girilir (fatura modalında "Hakediş Kesintileri" bölümü). Tipine göre:<br>
       <span style="color:var(--accent);font-weight:600;">📤 Yansıtma</span> (Yemek, İSG, makine): Taşeron kaleminin gerçekleşmesini düşürür (mükerrer önlenir).<br>
       <span style="color:#1e3a5f;font-weight:600;">🔒 Teminat</span> (Nakit): Taşerondan kesilir, havuza eklenir, iş sonu iade edilir.<br>
-      <span style="color:#2f6b48;font-weight:600;">💰 Avans Mahsubu</span>: Verilen avansı geri alır, avans bakiyesini erir.
+      <span style="color:#2f6b48;font-weight:600;">💰 Avans Mahsubu</span>: Verilen avansı geri alır, avans bakiyesini erir.<br>
+      <span style="color:#a44132;font-weight:600;">⚖️ Ceza/Kesinti</span>: Gecikme cezası vb — taşerona ödenmez, tasarruf yaratır (kalan lehte artar).
     </div>
 
     <!-- AVANS TAKİBİ -->
@@ -1172,6 +1174,33 @@ body.view-mode .lock-status * {
             </tr>
           </thead>
           <tbody id="yansitmaTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">⚖️ Ceza / Kesintiler (Faturalardan)</h2>
+        <span style="font-size:12px;color:var(--text-muted);">Taşerona ödenmeyen, tasarruf yaratan kesintiler (gecikme cezası vb)</span>
+      </div>
+      <div class="table-filter-wrap">
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (tedarikçi, hesap kodu, açıklama)" oninput="filterTable('cezaTableBody', this.value, this)" id="filter-ceza">
+        <span class="table-filter-count" id="filter-ceza-count"></span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-ceza','cezaTableBody','filter-ceza-count')">Temizle</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Tedarikçi</th>
+              <th>Hesap Kodu</th>
+              <th>Fatura</th>
+              <th class="center">Tarih</th>
+              <th>Açıklama</th>
+              <th class="right">Ceza Tutarı</th>
+            </tr>
+          </thead>
+          <tbody id="cezaTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -2036,7 +2065,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v4.1 (15.06)';
+const APP_BUILD = 'v4.3 (15.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -3312,9 +3341,9 @@ function getBudgetItemActualGrossTry(b) {
   const invoices = getInvoicesForBudgetItem(b);
   return invoices.reduce((sum, inv) => {
     const c = calcInvoiceTotals(inv);
-    // net (yansıtma düşülmüş) + o faturanın KDV'si (orantılı)
-    const netG = c.net - (c.kesYansitma || 0);
-    const kdvOran = c.net > 0 ? (netG / c.net) : 1; // yansıtma düşünce KDV de orantılı
+    // net (yansıtma + ceza düşülmüş) + o faturanın KDV'si (orantılı)
+    const netG = c.net - (c.kesYansitma || 0) - (c.kesCeza || 0);
+    const kdvOran = c.net > 0 ? (netG / c.net) : 1;
     return sum + netG + (c.kdvTotal * kdvOran);
   }, 0);
 }
@@ -3324,7 +3353,7 @@ function getBudgetItemActualGrossUsd(b) {
   return invoices.reduce((sum, inv) => {
     const c = calcInvoiceTotals(inv);
     const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
-    const netG = c.net - (c.kesYansitma || 0);
+    const netG = c.net - (c.kesYansitma || 0) - (c.kesCeza || 0);
     const kdvOran = c.net > 0 ? (netG / c.net) : 1;
     return sum + (netG + (c.kdvTotal * kdvOran)) / invFx;
   }, 0);
@@ -3384,9 +3413,8 @@ function getBudgetItemActualUsd(b) {
   return invoices.reduce((sum, inv) => {
     const c = calcInvoiceTotals(inv);
     const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
-    // Bütçe KDV hariç → gerçekleşme NET. Seçenek A: yansıtma kesintisi taşeron kalemini düşürür
-    // (yemek/İSG başka kalemin maliyeti — mükerrer önlenir). Teminat/avans düşülmez.
-    const netGerceklesme = c.net - (c.kesYansitma || 0);
+    // Gerçekleşme NET. Yansıtma (başka kaleme) + ceza (tasarruf) taşerona gitmedi → düşülür.
+    const netGerceklesme = c.net - (c.kesYansitma || 0) - (c.kesCeza || 0);
     return sum + (netGerceklesme / invFx);
   }, 0);
 }
@@ -3399,7 +3427,27 @@ function getBudgetItemActualTry(b) {
   const invoices = getInvoicesForBudgetItem(b);
   return invoices.reduce((sum, inv) => {
     const c = calcInvoiceTotals(inv);
-    return sum + (c.net - (c.kesYansitma || 0));
+    return sum + (c.net - (c.kesYansitma || 0) - (c.kesCeza || 0));
+  }, 0);
+}
+
+// Bu kalemden yansıtılan (3. tarafa aktarılan) toplam — TL
+function getBudgetItemYansitilanTry(b) {
+  if (!isBudgetLeaf(b)) {
+    return getDescendantLeaves(b).reduce((sum, leaf) => sum + getBudgetItemYansitilanTry(leaf), 0);
+  }
+  const invoices = getInvoicesForBudgetItem(b);
+  return invoices.reduce((sum, inv) => sum + (calcInvoiceTotals(inv).kesYansitma || 0), 0);
+}
+function getBudgetItemYansitilanUsd(b) {
+  if (!isBudgetLeaf(b)) {
+    return getDescendantLeaves(b).reduce((sum, leaf) => sum + getBudgetItemYansitilanUsd(leaf), 0);
+  }
+  const invoices = getInvoicesForBudgetItem(b);
+  const fx = getBudgetItemFx(b);
+  return invoices.reduce((sum, inv) => {
+    const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
+    return sum + ((calcInvoiceTotals(inv).kesYansitma || 0) / invFx);
   }, 0);
 }
 
@@ -4150,6 +4198,7 @@ function renderBudgetTable() {
   let totalActUsd=0, totalActTry=0, totalRemUsd=0, totalRemTry=0;
   let totalKdvUsd=0, totalKdvTry=0, totalGrossUsd=0, totalGrossTry=0;
   let totalActGrossUsd=0, totalActGrossTry=0, totalRevGrossUsd=0;
+  let totalYansUsd=0, totalYansTry=0;
 
   sorted.forEach(b => {
     const isLeaf = isBudgetLeaf(b);
@@ -4170,8 +4219,12 @@ function renderBudgetTable() {
     const effRevUsd = getEffectiveRevisedUsd(b);          // efektif revize USD (alt kalemlerden)
     const effUsd  = treeRev ? effRevUsd : baseUsd;
     const effTry  = treeRev ? effRevUsd * fx : baseTry;
-    const remUsd  = effUsd - actUsd;
-    const remTry  = effTry - actTry;
+    // Yansıtılan: bu kalemden 3. tarafa aktarılan (yemek/İSG vb) — bu kalemde "harcanmış" sayılır
+    const yansUsd = getBudgetItemYansitilanUsd(b);
+    const yansTry = getBudgetItemYansitilanTry(b);
+    // Gerçek Kalan = Baz − Gerçekleşme − Yansıtılan (Seçenek A)
+    const remUsd  = effUsd - actUsd - yansUsd;
+    const remTry  = effTry - actTry - yansTry;
 
     if (isRootBudgetItem(b)) {
       totalBaseUsd += baseUsd; totalBaseTry += baseTry;
@@ -4179,6 +4232,7 @@ function renderBudgetTable() {
       totalRevUsd += effUsd; totalRevTry += effTry;
       totalActUsd += actUsd; totalActTry += actTry;
       totalRemUsd += remUsd; totalRemTry += remTry;
+      totalYansUsd += yansUsd; totalYansTry += yansTry;
       totalKdvUsd += kdvUsd; totalKdvTry += kdvTry;
       totalGrossUsd += grossUsd; totalGrossTry += grossTry;
       totalActGrossUsd += getBudgetItemActualGrossUsd(b);
@@ -4253,6 +4307,7 @@ function renderBudgetTable() {
       <td class="right" style="color:#2f6b48;">${actTry>0?fmtTL(actTry):'—'}</td>
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${actGrossUsd>0?fmtUSD(actGrossUsd):'—'}</td>
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${actGrossTry>0?fmtTL(actGrossTry):'—'}</td>
+      <td class="right" style="background:rgba(184,134,61,0.06);color:${yansTry>0?'var(--accent)':'var(--text-muted)'};">${yansTry>0?fmtTL(yansTry):'—'}</td>
       <td class="right" style="${remColor}">${fmtUSD(remUsd)}</td>
       <td class="right" style="${remColor}">${fmtTL(remTry)}</td>
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtUSD(remGrossUsd)}</td>
@@ -4268,11 +4323,11 @@ function renderBudgetTable() {
   });
 
   if (sorted.length > 0) {
-    const totRemUsd = (hasAnyRevise ? totalRevUsd : totalBaseUsd) - totalActUsd;
-    const totRemTry = (hasAnyRevise ? totalRevTry : totalBaseTry) - totalActTry;
+    const totRemUsd = (hasAnyRevise ? totalRevUsd : totalBaseUsd) - totalActUsd - totalYansUsd;
+    const totRemTry = (hasAnyRevise ? totalRevTry : totalBaseTry) - totalActTry - totalYansTry;
     const totRevGross = hasAnyRevise ? totalRevGrossUsd : totalGrossUsd;
-    const totRemGrossUsd = totRevGross - totalActGrossUsd;
-    const totRemGrossTry = (totRevGross * fx) - totalActGrossTry;
+    const totRemGrossUsd = totRevGross - totalActGrossUsd - totalYansUsd;
+    const totRemGrossTry = (totRevGross * fx) - totalActGrossTry - totalYansTry;
     const tr = document.createElement('tr');
     tr.style.cssText = 'font-weight:700;background:rgba(30,58,95,0.06);border-bottom:2px solid var(--border-strong);';
     tr.innerHTML = `
@@ -4289,6 +4344,7 @@ function renderBudgetTable() {
       <td class="right" style="color:#2f6b48;">${totalActTry>0?fmtTL(totalActTry):'—'}</td>
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${totalActGrossUsd>0?fmtUSD(totalActGrossUsd):'—'}</td>
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${totalActGrossTry>0?fmtTL(totalActGrossTry):'—'}</td>
+      <td class="right" style="background:rgba(184,134,61,0.06);color:${totalYansTry>0?'var(--accent)':'var(--text-muted)'};">${totalYansTry>0?fmtTL(totalYansTry):'—'}</td>
       <td class="right" style="${totRemUsd<0?'color:#a44132;font-weight:700;':''}">${fmtUSD(totRemUsd)}</td>
       <td class="right" style="${totRemTry<0?'color:#a44132;font-weight:700;':''}">${fmtTL(totRemTry)}</td>
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtUSD(totRemGrossUsd)}</td>
@@ -4402,14 +4458,15 @@ function calcInvoiceTotals(inv) {
 
   // Kesintiler — tip bazında
   const kesintiler = inv.kesintiler || [];
-  let kesAvans = 0, kesTeminat = 0, kesYansitma = 0;
+  let kesAvans = 0, kesTeminat = 0, kesYansitma = 0, kesCeza = 0;
   kesintiler.forEach(k => {
     const t = k.tutar || 0;
     if (k.tip === 'avans') kesAvans += t;
     else if (k.tip === 'teminat') kesTeminat += t;
+    else if (k.tip === 'ceza') kesCeza += t;
     else kesYansitma += t; // yansitma ve diğer
   });
-  const kesToplam = kesAvans + kesTeminat + kesYansitma;
+  const kesToplam = kesAvans + kesTeminat + kesYansitma + kesCeza;
 
   // Net ödenecek = genel toplam − tüm kesintiler (taşerona fiilen çıkan nakit)
   const netOdenecek = grandTotal - kesToplam;
@@ -4422,7 +4479,7 @@ function calcInvoiceTotals(inv) {
 
   return {
     net, kdvRows, kdvTotal, stopajRate, stopajAmount, tevkifatRate, tevkifatAmount, grandTotal,
-    kesAvans, kesTeminat, kesYansitma, kesToplam, netOdenecek,
+    kesAvans, kesTeminat, kesYansitma, kesCeza, kesToplam, netOdenecek,
     installments, totalPaid, remaining, overallStatus
   };
 }
@@ -5516,6 +5573,7 @@ function renderInvoiceKesintiRows() {
         <option value="avans" ${k.tip==='avans'?'selected':''}>💰 Avans Mahsubu</option>
         <option value="teminat" ${k.tip==='teminat'?'selected':''}>🔒 Teminat</option>
         <option value="yansitma" ${k.tip==='yansitma'?'selected':''}>📤 Yansıtma</option>
+        <option value="ceza" ${k.tip==='ceza'?'selected':''}>⚖️ Ceza/Kesinti</option>
       </select>
       ${teminatAltTip}
       <input type="text" placeholder="Açıklama (ör. Şantiye yemek)" value="${(k.label||'').replace(/"/g,'&quot;')}"
@@ -6679,6 +6737,7 @@ function renderDeductionsAll() {
   renderAvansTable();
   renderTeminatHavuz();
   renderYansitmaTable();
+  renderCezaTable();
   renderDeductionCashflowSummary();
   renderDeductionChart();
 }
@@ -7069,11 +7128,39 @@ function renderYansitmaTable() {
   tbody.appendChild(tr);
 }
 
-// ============================================================
-// TEMİNAT MEKTUPLARI
-// ============================================================
-let editingMektupId = null;
-let mektupYenilevenId = null;
+function renderCezaTable() {
+  const tbody = document.getElementById('cezaTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  const rows = [];
+  state.invoices.forEach(inv => {
+    (inv.kesintiler || []).forEach(k => {
+      if (k.tip === 'ceza') rows.push({ inv, k });
+    });
+  });
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Henüz ceza/kesinti yok</td></tr>';
+    return;
+  }
+  let tot = 0;
+  rows.forEach(({ inv, k }) => {
+    tot += k.tutar || 0;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(inv.supplier || '—')}</td>
+      <td class="mono">${inv.code || '—'}</td>
+      <td class="mono">${inv.invoiceNo || '—'}</td>
+      <td class="center">${fmtDate(inv.date)}</td>
+      <td>${escapeHtml(k.label || '—')}</td>
+      <td class="right" style="font-weight:600;color:#a44132;">${fmtTL(k.tutar || 0)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  const tr = document.createElement('tr');
+  tr.style.cssText = 'font-weight:700;background:rgba(164,65,50,0.06);border-top:2px solid var(--border-strong);';
+  tr.innerHTML = `<td colspan="5" style="font-weight:700;">TOPLAM CEZA (tasarruf)</td><td class="right" style="color:#a44132;">${fmtTL(tot)}</td>`;
+  tbody.appendChild(tr);
+}
 
 function mektupKalanGun(vade) {
   if (!vade) return null;
