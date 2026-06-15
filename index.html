@@ -947,26 +947,34 @@ body.view-mode .lock-status * {
               <th class="right" rowspan="2">Miktar</th>
               <th class="center" rowspan="2">Birim</th>
               <th class="right" rowspan="2">B.Fiyat</th>
-              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Baz Bütçe (KDV hariç)</th>
-              <th class="right kdv-col" colspan="3" style="border-bottom: 1px solid var(--border); background: rgba(47,107,72,0.05);">KDV Dahil</th>
+              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Baz Bütçe</th>
+              <th class="right kdv-col" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(47,107,72,0.05);">Baz KDV Dahil</th>
               <th class="right" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(184,134,61,0.06);">Revize Bütçe</th>
+              <th class="right kdv-col" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(47,107,72,0.05);">Revize KDV Dahil</th>
               <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Gerçekleşme</th>
+              <th class="right kdv-col" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(47,107,72,0.05);">Gerç. KDV Dahil</th>
               <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Kalan</th>
+              <th class="right kdv-col" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(47,107,72,0.05);">Kalan KDV Dahil</th>
               <th class="center" rowspan="2">Durum</th>
               <th class="center" rowspan="2"></th>
             </tr>
             <tr>
               <th class="right" style="font-size: 10px; color: var(--text-muted);">USD</th>
               <th class="right" style="font-size: 10px; color: var(--text-muted);">TL</th>
-              <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">KDV %</th>
-              <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">Dahil USD</th>
-              <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">Dahil TL</th>
+              <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">USD</th>
+              <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">TL</th>
               <th class="right" style="font-size: 10px; color: var(--accent); background: rgba(184,134,61,0.06);">USD</th>
               <th class="right" style="font-size: 10px; color: var(--accent); background: rgba(184,134,61,0.06);">TL</th>
+              <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">USD</th>
+              <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">TL</th>
               <th class="right" style="font-size: 10px; color: #2f6b48;">USD</th>
               <th class="right" style="font-size: 10px; color: #2f6b48;">TL</th>
+              <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">USD</th>
+              <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">TL</th>
               <th class="right" style="font-size: 10px; color: var(--text-muted);">USD</th>
               <th class="right" style="font-size: 10px; color: var(--text-muted);">TL</th>
+              <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">USD</th>
+              <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">TL</th>
             </tr>
           </thead>
           <tbody id="budgetTotalBody"></tbody>
@@ -1051,6 +1059,8 @@ body.view-mode .lock-status * {
               <th class="right">Tevkifat</th>
               <th class="right">G.Toplam TL</th>
               <th class="right">G.Toplam USD</th>
+              <th class="right" style="background:rgba(164,65,50,0.05);" title="Avans mahsubu + teminat + yansıtma kesintileri">Kesinti</th>
+              <th class="right" style="background:rgba(47,107,72,0.05);" title="Genel toplam − kesintiler (taşerona fiilen ödenecek)">Net Ödenecek</th>
               <th class="right">Ödenen</th>
               <th class="right">Kalan</th>
               <th class="center">Kur</th>
@@ -1085,6 +1095,11 @@ body.view-mode .lock-status * {
       <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
         İş başında verilen avans. Nakit çıkışıdır ama maliyet değildir (bütçe gerçekleşmesine girmez). Her hakedişte fatura modalından "Avans Mahsubu" kesintisiyle geri alınır.
       </p>
+      <div class="table-filter-wrap">
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (tedarikçi, hesap kodu)" oninput="filterTable('avansTableBody', this.value, this)" id="filter-avans">
+        <span class="table-filter-count" id="filter-avans-count"></span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-avans','avansTableBody','filter-avans-count')">Temizle</button>
+      </div>
       <div style="overflow-x:auto;">
         <table class="data-table">
           <thead>
@@ -1104,19 +1119,25 @@ body.view-mode .lock-status * {
       </div>
     </div>
 
-    <!-- TEMİNAT HAVUZU (NAKİT) -->
+    <!-- TEMİNATLAR -->
     <div class="section">
       <div class="section-header">
-        <h2 class="section-title">🔒 Nakit Teminat Havuzu</h2>
-        <span style="font-size:12px;color:var(--text-muted);">Hakedişlerden kesilen nakit teminatlar — iş/garanti sonu iade</span>
+        <h2 class="section-title">🔒 Teminatlar</h2>
+        <span style="font-size:12px;color:var(--text-muted);">Hakedişlerden kesilen teminatlar — tipe göre ayrı, iş/garanti sonu iade</span>
       </div>
       <div id="teminatHavuzUyari"></div>
+      <div class="table-filter-wrap">
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (tedarikçi, hesap kodu, tip)" oninput="filterTable('teminatHavuzBody', this.value, this)" id="filter-teminat">
+        <span class="table-filter-count" id="filter-teminat-count"></span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-teminat','teminatHavuzBody','filter-teminat-count')">Temizle</button>
+      </div>
       <div style="overflow-x:auto;">
         <table class="data-table">
           <thead>
             <tr>
               <th>Tedarikçi</th>
               <th>Hesap Kodu</th>
+              <th class="center">Tip</th>
               <th class="right">Kesilen Teminat</th>
               <th class="right">İade Edilen</th>
               <th class="right">Havuzda (İade Bekleyen)</th>
@@ -1132,6 +1153,11 @@ body.view-mode .lock-status * {
       <div class="section-header">
         <h2 class="section-title">📤 Yansıtma Kesintileri (Faturalardan)</h2>
         <span style="font-size:12px;color:var(--text-muted);">Taşeron kalemlerinden düşülen, 3. tarafa yansıyan kesintiler</span>
+      </div>
+      <div class="table-filter-wrap">
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (tedarikçi, hesap kodu, açıklama)" oninput="filterTable('yansitmaTableBody', this.value, this)" id="filter-yansitma">
+        <span class="table-filter-count" id="filter-yansitma-count"></span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-yansitma','yansitmaTableBody','filter-yansitma-count')">Temizle</button>
       </div>
       <div style="overflow-x:auto;">
         <table class="data-table">
@@ -1184,6 +1210,11 @@ body.view-mode .lock-status * {
         </div>
       </div>
       <div id="mektupUyariBar"></div>
+      <div class="table-filter-wrap">
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (tedarikçi, banka, mektup no, tür)" oninput="filterTable('mektupTableBody', this.value, this)" id="filter-mektup">
+        <span class="table-filter-count" id="filter-mektup-count"></span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-mektup','mektupTableBody','filter-mektup-count')">Temizle</button>
+      </div>
       <div style="overflow-x:auto;">
         <table class="data-table">
           <thead>
@@ -2005,7 +2036,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v3.7 (01.06)';
+const APP_BUILD = 'v3.9 (14.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -3272,6 +3303,37 @@ function getBudgetItemKdvTry(b) {
 function getBudgetItemGrossUsd(b) { return getBudgetItemTotalUsd(b) + getBudgetItemKdvUsd(b); }
 function getBudgetItemGrossTry(b) { return getBudgetItemTotalTry(b) + getBudgetItemKdvTry(b); }
 
+// Gerçekleşme KDV dahil — faturanın gerçek KDV'sinden
+function getBudgetItemActualGrossTry(b) {
+  const invoices = getInvoicesForBudgetItem(b);
+  return invoices.reduce((sum, inv) => {
+    const c = calcInvoiceTotals(inv);
+    // net (yansıtma düşülmüş) + o faturanın KDV'si (orantılı)
+    const netG = c.net - (c.kesYansitma || 0);
+    const kdvOran = c.net > 0 ? (netG / c.net) : 1; // yansıtma düşünce KDV de orantılı
+    return sum + netG + (c.kdvTotal * kdvOran);
+  }, 0);
+}
+function getBudgetItemActualGrossUsd(b) {
+  const invoices = getInvoicesForBudgetItem(b);
+  const fx = getBudgetItemFx(b);
+  return invoices.reduce((sum, inv) => {
+    const c = calcInvoiceTotals(inv);
+    const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
+    const netG = c.net - (c.kesYansitma || 0);
+    const kdvOran = c.net > 0 ? (netG / c.net) : 1;
+    return sum + (netG + (c.kdvTotal * kdvOran)) / invFx;
+  }, 0);
+}
+// Revize KDV dahil — efektif revize × (1 + ağırlıklı KDV oranı)
+function getEffectiveRevisedGrossUsd(b) {
+  const revUsd = getEffectiveRevisedUsd(b);
+  const baseUsd = getBudgetItemTotalUsd(b);
+  const grossUsd = getBudgetItemGrossUsd(b);
+  const kdvCarpan = baseUsd > 0 ? (grossUsd / baseUsd) : 1.20;
+  return revUsd * kdvCarpan;
+}
+
 
 // Bir ana kategorinin alt kalemlerinin iş programı tarihlerinden başlangıç/bitiş türet
 function getDerivedProgramRange(b) {
@@ -3342,23 +3404,26 @@ async function reviseBudgetItem(id) {
   if (!requireEdit()) return;
   const b = state.budget.find(x => String(x.id) === String(id));
   if (!b) return;
+  const fx = getBudgetItemFx(b);
   const basUsd = getBudgetItemTotalUsd(b);
-  const actUsd = getBudgetItemActualUsd(b);
-  const mevcut = b.revisedBudgetUsd != null ? b.revisedBudgetUsd : basUsd;
+  const basTry = getBudgetItemTotalTry(b);
+  const actTry = getBudgetItemActualTry(b);
+  const mevcutTry = b.revisedBudgetUsd != null ? b.revisedBudgetUsd * fx : basTry;
   const input = prompt(
     `"${b.name}" kalemini revize et\n\n` +
-    `Baz Bütçe: ${fmtUSD(basUsd)}\n` +
-    `Gerçekleşme: ${fmtUSD(actUsd)}\n` +
-    `Mevcut Revize: ${b.revisedBudgetUsd != null ? fmtUSD(b.revisedBudgetUsd) : '(yok)'}\n\n` +
-    `Yeni revize bütçe (USD) gir:\n(Sıfır veya boş bırakırsan revize iptal olur)`,
-    mevcut.toFixed(0)
+    `Baz Bütçe: ${fmtTL(basTry)}\n` +
+    `Gerçekleşme: ${fmtTL(actTry)}\n` +
+    `Mevcut Revize: ${b.revisedBudgetUsd != null ? fmtTL(b.revisedBudgetUsd * fx) : '(yok)'}\n\n` +
+    `Yeni revize bütçe (TL) gir:\n(Kur: ${fmtNum(fx,2)} — USD otomatik hesaplanır)\n(Sıfır veya boş bırakırsan revize iptal olur)`,
+    mevcutTry.toFixed(0)
   );
   if (input === null) return; // iptal
-  const val = parseFloat(input);
-  if (!val || val <= 0) {
+  const valTry = parseDecimal(input);
+  if (!valTry || valTry <= 0) {
     delete b.revisedBudgetUsd;
   } else {
-    b.revisedBudgetUsd = val;
+    // TL girildi → USD'ye çevir (saklanan değer USD)
+    b.revisedBudgetUsd = fx > 0 ? valTry / fx : valTry;
   }
   await saveState();
   renderBudgetTable();
@@ -4080,6 +4145,7 @@ function renderBudgetTable() {
   let hasAnyRevise = false; // gerçekten revize girilmiş kalem var mı?
   let totalActUsd=0, totalActTry=0, totalRemUsd=0, totalRemTry=0;
   let totalKdvUsd=0, totalKdvTry=0, totalGrossUsd=0, totalGrossTry=0;
+  let totalActGrossUsd=0, totalActGrossTry=0, totalRevGrossUsd=0;
 
   sorted.forEach(b => {
     const isLeaf = isBudgetLeaf(b);
@@ -4111,6 +4177,9 @@ function renderBudgetTable() {
       totalRemUsd += remUsd; totalRemTry += remTry;
       totalKdvUsd += kdvUsd; totalKdvTry += kdvTry;
       totalGrossUsd += grossUsd; totalGrossTry += grossTry;
+      totalActGrossUsd += getBudgetItemActualGrossUsd(b);
+      totalActGrossTry += getBudgetItemActualGrossTry(b);
+      totalRevGrossUsd += treeRev ? getEffectiveRevisedGrossUsd(b) : grossUsd;
     }
 
     const asilmis = actUsd > effUsd + 0.01;
@@ -4151,7 +4220,14 @@ function renderBudgetTable() {
     const revUsdCell = treeRev ? `<span style="color:var(--accent);font-weight:600;">${fmtUSD(effRevUsd)}</span>` : '<span style="color:var(--text-muted);">—</span>';
     const revTryCell = treeRev ? `<span style="color:var(--accent);">${fmtTL(effRevUsd*fx)}</span>` : '<span style="color:var(--text-muted);">—</span>';
     const remColor = remUsd < -0.01 ? 'color:#a44132;font-weight:600;' : (remUsd < effUsd*0.1 ? 'color:#b86800;' : '');
-    const kdvRateCell = isLeaf ? `${kdvRate}%` : '<span style="color:var(--text-muted);font-size:10px;">∑</span>';
+
+    // KDV dahil değerler
+    const revGrossUsd = treeRev ? getEffectiveRevisedGrossUsd(b) : grossUsd;
+    const actGrossUsd = getBudgetItemActualGrossUsd(b);
+    const actGrossTry = getBudgetItemActualGrossTry(b);
+    const effGrossUsd = treeRev ? revGrossUsd : grossUsd;       // kalan baz: revize varsa revize dahil
+    const remGrossUsd = effGrossUsd - actGrossUsd;
+    const remGrossTry = (effGrossUsd * fx) - actGrossTry;
 
     tr.innerHTML = `
       <td class="mono" style="font-size:12px;">${b.code}</td>
@@ -4163,15 +4239,20 @@ function renderBudgetTable() {
       <td class="right">${priceCell}</td>
       <td class="right">${fmtUSD(baseUsd)}</td>
       <td class="right" style="color:var(--text-muted);">${fmtTL(baseTry)}</td>
-      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;font-size:11px;">${kdvRateCell}</td>
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtUSD(grossUsd)}</td>
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtTL(grossTry)}</td>
       <td class="right" style="background:rgba(184,134,61,0.04);">${revUsdCell}</td>
       <td class="right" style="background:rgba(184,134,61,0.04);">${revTryCell}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${treeRev?fmtUSD(revGrossUsd):'—'}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${treeRev?fmtTL(revGrossUsd*fx):'—'}</td>
       <td class="right" style="color:#2f6b48;">${actUsd>0?fmtUSD(actUsd):'—'}</td>
       <td class="right" style="color:#2f6b48;">${actTry>0?fmtTL(actTry):'—'}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${actGrossUsd>0?fmtUSD(actGrossUsd):'—'}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${actGrossTry>0?fmtTL(actGrossTry):'—'}</td>
       <td class="right" style="${remColor}">${fmtUSD(remUsd)}</td>
       <td class="right" style="${remColor}">${fmtTL(remTry)}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtUSD(remGrossUsd)}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtTL(remGrossTry)}</td>
       <td class="center">${statusHtml}</td>
       <td class="center" style="white-space:nowrap;">
         <button class="btn btn-icon btn-ghost" onclick="editBudgetItem('${b.id}')">Düzenle</button>
@@ -4185,21 +4266,29 @@ function renderBudgetTable() {
   if (sorted.length > 0) {
     const totRemUsd = (hasAnyRevise ? totalRevUsd : totalBaseUsd) - totalActUsd;
     const totRemTry = (hasAnyRevise ? totalRevTry : totalBaseTry) - totalActTry;
+    const totRevGross = hasAnyRevise ? totalRevGrossUsd : totalGrossUsd;
+    const totRemGrossUsd = totRevGross - totalActGrossUsd;
+    const totRemGrossTry = (totRevGross * fx) - totalActGrossTry;
     const tr = document.createElement('tr');
     tr.style.cssText = 'font-weight:700;background:rgba(30,58,95,0.06);border-bottom:2px solid var(--border-strong);';
     tr.innerHTML = `
       <td colspan="7" style="font-weight:700;color:var(--primary);">📊 PROJE TOPLAMI</td>
       <td class="right">${fmtUSD(totalBaseUsd)}</td>
       <td class="right" style="color:var(--text-muted);">${fmtTL(totalBaseTry)}</td>
-      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;font-size:10px;">—</td>
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtUSD(totalGrossUsd)}</td>
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtTL(totalGrossTry)}</td>
       <td class="right" style="background:rgba(184,134,61,0.04);color:var(--accent);">${hasAnyRevise ? fmtUSD(totalRevUsd) : '—'}</td>
       <td class="right" style="background:rgba(184,134,61,0.04);color:var(--accent);">${hasAnyRevise ? fmtTL(totalRevTry) : '—'}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${hasAnyRevise ? fmtUSD(totalRevGrossUsd) : '—'}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${hasAnyRevise ? fmtTL(totalRevGrossUsd*fx) : '—'}</td>
       <td class="right" style="color:#2f6b48;">${totalActUsd>0?fmtUSD(totalActUsd):'—'}</td>
       <td class="right" style="color:#2f6b48;">${totalActTry>0?fmtTL(totalActTry):'—'}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${totalActGrossUsd>0?fmtUSD(totalActGrossUsd):'—'}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${totalActGrossTry>0?fmtTL(totalActGrossTry):'—'}</td>
       <td class="right" style="${totRemUsd<0?'color:#a44132;font-weight:700;':''}">${fmtUSD(totRemUsd)}</td>
       <td class="right" style="${totRemTry<0?'color:#a44132;font-weight:700;':''}">${fmtTL(totRemTry)}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtUSD(totRemGrossUsd)}</td>
+      <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtTL(totRemGrossTry)}</td>
       <td colspan="2"></td>
     `;
     if (totalBody) totalBody.appendChild(tr);
@@ -4372,6 +4461,8 @@ function renderInvoiceTable() {
       <td class="right">${c.tevkifatAmount > 0 ? fmtTL(c.tevkifatAmount) : '—'}</td>
       <td class="right" style="font-weight:600;">${fmtTL(c.grandTotal)}</td>
       <td class="right" style="color:var(--accent);font-weight:600;">${fmtUSD(grandUsd)}</td>
+      <td class="right" style="background:rgba(164,65,50,0.04);color:#a44132;">${c.kesToplam > 0 ? '-' + fmtTL(c.kesToplam) : '—'}</td>
+      <td class="right" style="background:rgba(47,107,72,0.04);color:#2f6b48;font-weight:600;">${fmtTL(c.netOdenecek)}</td>
       <td class="right" style="color:#2f6b48;">${c.totalPaid > 0 ? fmtTL(c.totalPaid) : '—'}</td>
       <td class="right" style="color:${c.remaining > 0.01 ? '#a44132' : '#2f6b48'};">${fmtTL(c.remaining)}</td>
       <td class="center" style="font-size:11px;color:var(--text-muted);">${fmtNum(invFx, 2)}</td>
@@ -4386,7 +4477,7 @@ function renderInvoiceTable() {
   });
   
   if (sorted.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="15" class="empty-state">Henüz fatura/hakediş kaydı yok</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="17" class="empty-state">Henüz fatura/hakediş kaydı yok</td></tr>';
   }
 }
 
@@ -5192,6 +5283,31 @@ function editInvoice(id) {
   
   // Kesintileri yükle
   invoiceKesintiler = inv.kesintiler ? JSON.parse(JSON.stringify(inv.kesintiler)) : [];
+
+  // Eski sistemden geçiş: bu faturada kesinti yok ama eşleşen eski manuel kesinti kaydı varsa öner
+  if (invoiceKesintiler.length === 0 && inv.code) {
+    const eskiKesinti = state.deductions.find(d =>
+      (d.code && (String(d.code) === String(inv.code))) ||
+      (d.supplier && inv.supplier && d.supplier === inv.supplier));
+    if (eskiKesinti && eskiKesinti.columns) {
+      const aktarilacak = [];
+      (state.settings.deductionColumns || []).forEach(col => {
+        const v = eskiKesinti.columns[col.key] || 0;
+        if (v > 0) {
+          let tip = 'yansitma';
+          if (col.type === 'teminat') tip = 'teminat';
+          else if ((col.label || '').toLowerCase().includes('avans')) tip = 'avans';
+          aktarilacak.push({ tip, label: col.label || col.key, tutar: v });
+        }
+      });
+      if (aktarilacak.length > 0) {
+        const toplam = aktarilacak.reduce((s, k) => s + k.tutar, 0);
+        if (confirm(`Bu faturaya/tedarikçiye ait eski kesinti kaydı bulundu (${fmtTL(toplam)}).\n\nFatura kesintisi olarak aktarılsın mı?\n(Net ödenecek otomatik düşecek)`)) {
+          invoiceKesintiler = aktarilacak;
+        }
+      }
+    }
+  }
   
   renderKdvRows();
   renderInvoiceKesintiRows();
@@ -5312,6 +5428,12 @@ function removeInvoiceKesinti(idx) {
 function onKesintiChange(idx, field, val) {
   if (field === 'tutar') invoiceKesintiler[idx].tutar = parseDecimal(val);
   else invoiceKesintiler[idx][field] = val;
+  if (field === 'tip') {
+    // Teminat seçilince varsayılan alt-tip ata, satırı yeniden çiz (alt-tip select için)
+    if (val === 'teminat' && !invoiceKesintiler[idx].altTip) invoiceKesintiler[idx].altTip = 'gecici_nakit';
+    renderInvoiceKesintiRows();
+    return;
+  }
   if (field === 'tutar') recalcInvoiceTotals();
 }
 
@@ -5326,13 +5448,21 @@ function renderInvoiceKesintiRows() {
   wrap.innerHTML = '';
   invoiceKesintiler.forEach((k, idx) => {
     const row = document.createElement('div');
-    row.style.cssText = 'display:grid;grid-template-columns:130px 1fr 130px 32px;gap:8px;align-items:center;margin-bottom:6px;';
+    const isTeminat = k.tip === 'teminat';
+    row.style.cssText = `display:grid;grid-template-columns:130px ${isTeminat?'120px ':''}1fr 130px 32px;gap:8px;align-items:center;margin-bottom:6px;`;
+    const teminatAltTip = isTeminat ? `
+      <select onchange="onKesintiChange(${idx},'altTip',this.value)" style="font-size:12px;padding:5px;">
+        <option value="gecici_nakit" ${k.altTip==='gecici_nakit'?'selected':''}>Geçici Nakit</option>
+        <option value="kesin_nakit" ${k.altTip==='kesin_nakit'?'selected':''}>Kesin Nakit</option>
+        <option value="kesin_mektup" ${k.altTip==='kesin_mektup'?'selected':''}>Kesin Mektup</option>
+      </select>` : '';
     row.innerHTML = `
       <select onchange="onKesintiChange(${idx},'tip',this.value)" style="font-size:12px;padding:5px;">
         <option value="avans" ${k.tip==='avans'?'selected':''}>💰 Avans Mahsubu</option>
         <option value="teminat" ${k.tip==='teminat'?'selected':''}>🔒 Teminat</option>
         <option value="yansitma" ${k.tip==='yansitma'?'selected':''}>📤 Yansıtma</option>
       </select>
+      ${teminatAltTip}
       <input type="text" placeholder="Açıklama (ör. Şantiye yemek)" value="${(k.label||'').replace(/"/g,'&quot;')}"
         oninput="onKesintiChange(${idx},'label',this.value)" style="font-size:12px;padding:5px;">
       <input type="text" placeholder="Tutar TL" value="${k.tutar||''}"
@@ -6607,39 +6737,47 @@ function renderTeminatHavuz() {
   const tbody = document.getElementById('teminatHavuzBody');
   if (!tbody) return;
   tbody.innerHTML = '';
-  // Faturalardan teminat kesintilerini taşeron+kod bazında grupla
+  const tipLabel = { gecici_nakit: 'Geçici Nakit', kesin_nakit: 'Kesin Nakit', kesin_mektup: 'Kesin Mektup' };
+  // Faturalardan teminat kesintilerini taşeron+kod+altTip bazında grupla
   const gruplar = {};
   state.invoices.forEach(inv => {
     (inv.kesintiler || []).forEach(k => {
       if (k.tip !== 'teminat') return;
-      const key = (inv.supplier || '') + '|' + (inv.code || '');
-      if (!gruplar[key]) gruplar[key] = { supplier: inv.supplier || '', code: inv.code || '', kesilen: 0 };
+      const at = k.altTip || 'gecici_nakit';
+      const key = (inv.supplier || '') + '|' + (inv.code || '') + '|' + at;
+      if (!gruplar[key]) gruplar[key] = { supplier: inv.supplier || '', code: inv.code || '', altTip: at, kesilen: 0 };
       gruplar[key].kesilen += (k.tutar || 0);
     });
   });
   const keys = Object.keys(gruplar);
   if (keys.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Henüz nakit teminat kesintisi yok — fatura modalından 🔒 Teminat kesintisi gir</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Henüz teminat kesintisi yok — fatura modalından 🔒 Teminat kesintisi gir</td></tr>';
+    const uyari = document.getElementById('teminatHavuzUyari'); if (uyari) uyari.innerHTML = '';
     return;
   }
   let totKes = 0, totIade = 0, totHavuz = 0;
+  // Tip sırasına göre sırala
+  const tipSira = { gecici_nakit: 1, kesin_nakit: 2, kesin_mektup: 3 };
+  keys.sort((a, b) => (tipSira[gruplar[a].altTip]||9) - (tipSira[gruplar[b].altTip]||9));
   keys.forEach(key => {
     const g = gruplar[key];
-    // İade edilen toplam
+    // İade: aynı supplier+code+altTip
     const iade = (state.teminatIadeleri || [])
-      .filter(t => t.supplier === g.supplier && (t.code || '') === g.code)
+      .filter(t => t.supplier === g.supplier && (t.code || '') === g.code && (t.altTip || 'gecici_nakit') === g.altTip)
       .reduce((s, t) => s + (t.tutar || 0), 0);
     const havuz = g.kesilen - iade;
     totKes += g.kesilen; totIade += iade; totHavuz += havuz;
+    const tipColor = g.altTip === 'kesin_mektup' ? '#7a5a1a' : (g.altTip === 'kesin_nakit' ? '#1e3a5f' : '#2f6b48');
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeHtml(g.supplier || '—')}</td>
       <td class="mono">${g.code || '—'}</td>
+      <td class="center"><span class="tag" style="color:${tipColor};">${tipLabel[g.altTip] || g.altTip}</span></td>
       <td class="right" style="font-weight:600;">${fmtTL(g.kesilen)}</td>
       <td class="right" style="color:#2f6b48;">${iade > 0 ? fmtTL(iade) : '—'}</td>
       <td class="right" style="font-weight:600;color:${havuz > 0.01 ? '#1e3a5f' : '#2f6b48'};">${fmtTL(havuz)}</td>
       <td class="center">
-        ${havuz > 0.01 ? `<button class="btn btn-ghost" style="font-size:11px;color:#2f6b48;" onclick="iadeEtTeminat('${escapeHtml(g.supplier)}','${g.code}',${havuz})">✓ İade Et</button>` : '<span style="font-size:11px;color:var(--text-muted);">Tamamlandı</span>'}
+        ${havuz > 0.01 ? `<button class="btn btn-ghost" style="font-size:11px;color:#2f6b48;" onclick="iadeEtTeminat('${escapeHtml(g.supplier)}','${g.code}','${g.altTip}',${havuz})">✓ İade Et</button>` : '<span style="font-size:11px;color:var(--text-muted);">Tamamlandı</span>'}
       </td>
     `;
     tbody.appendChild(tr);
@@ -6647,7 +6785,7 @@ function renderTeminatHavuz() {
   const tr = document.createElement('tr');
   tr.style.cssText = 'font-weight:700;background:rgba(30,58,95,0.06);border-top:2px solid var(--border-strong);';
   tr.innerHTML = `
-    <td colspan="2" style="font-weight:700;">TOPLAM</td>
+    <td colspan="3" style="font-weight:700;">TOPLAM</td>
     <td class="right">${fmtTL(totKes)}</td>
     <td class="right" style="color:#2f6b48;">${fmtTL(totIade)}</td>
     <td class="right" style="color:#1e3a5f;">${fmtTL(totHavuz)}</td>
@@ -6655,26 +6793,26 @@ function renderTeminatHavuz() {
   `;
   tbody.appendChild(tr);
 
-  // Havuz uyarı
   const uyari = document.getElementById('teminatHavuzUyari');
   if (uyari) {
     uyari.innerHTML = totHavuz > 0.01
       ? `<div style="padding:10px 14px;margin-bottom:12px;background:rgba(30,58,95,0.05);border:1px solid rgba(30,58,95,0.2);border-radius:8px;font-size:13px;">
-          🔒 Toplam <strong>${fmtTL(totHavuz)}</strong> nakit teminat havuzda — iş/garanti sonu taşeronlara iade edilecek (gelecekte nakit çıkışı)</div>`
+          🔒 Toplam <strong>${fmtTL(totHavuz)}</strong> teminat havuzda — iş/garanti sonu taşeronlara iade edilecek (gelecekte nakit çıkışı)</div>`
       : '';
   }
 }
 
-async function iadeEtTeminat(supplier, code, tutar) {
+async function iadeEtTeminat(supplier, code, altTip, tutar) {
   if (!requireEdit()) return;
   const bugun = new Date().toISOString().substring(0,10);
-  const input = prompt(`"${supplier}" için iade edilecek teminat tutarı (TL):\n\nHavuzdaki tutar: ${fmtTL(tutar)}\n(Kısmi iade için daha az girebilirsin)`, tutar.toFixed(2));
+  const tipLabel = { gecici_nakit: 'Geçici Nakit', kesin_nakit: 'Kesin Nakit', kesin_mektup: 'Kesin Mektup' };
+  const input = prompt(`"${supplier}" — ${tipLabel[altTip]||''} teminat iadesi (TL):\n\nHavuzdaki tutar: ${fmtTL(tutar)}\n(Kısmi iade için daha az girebilirsin)`, tutar.toFixed(2));
   if (input === null) return;
   const iadeTutar = parseDecimal(input);
   if (!iadeTutar || iadeTutar <= 0) { alert('Geçerli tutar gir'); return; }
   if (!state.teminatIadeleri) state.teminatIadeleri = [];
   state.teminatIadeleri.push({
-    id: 'ti_' + Date.now(), supplier, code: code || '', tutar: iadeTutar, tarih: bugun
+    id: 'ti_' + Date.now(), supplier, code: code || '', altTip: altTip || 'gecici_nakit', tutar: iadeTutar, tarih: bugun
   });
   await saveState();
   renderAll();
@@ -7427,22 +7565,8 @@ function renderDeductionCashflowSummary() {
   const el = document.getElementById('deductionCashflowSummary');
   if (!el) return;
 
-  const teminatCols = state.settings.deductionColumns.filter(c => c.type === 'teminat');
-  const yansitmaCols = state.settings.deductionColumns.filter(c => c.type === 'yansitma');
-
   let toplamTeminat = 0, toplamYansitma = 0, iadeEdilen = 0;
-  // Eski manuel kayıtlar
-  state.deductions.forEach(d => {
-    teminatCols.forEach(col => {
-      const v = (d.columns && d.columns[col.key]) || 0;
-      toplamTeminat += v;
-      if (d.iadeStatus === 'iade') iadeEdilen += v;
-    });
-    yansitmaCols.forEach(col => {
-      toplamYansitma += (d.columns && d.columns[col.key]) || 0;
-    });
-  });
-  // Yeni fatura kesintileri
+  // SADECE yeni fatura kesintileri (eski manuel kayıtlar mükerrer olmasın diye dahil edilmez)
   state.invoices.forEach(inv => {
     (inv.kesintiler || []).forEach(k => {
       if (k.tip === 'teminat') toplamTeminat += (k.tutar || 0);
