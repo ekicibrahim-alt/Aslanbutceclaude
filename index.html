@@ -2085,7 +2085,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v4.6 (16.06)';
+const APP_BUILD = 'v4.7 (16.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -4435,13 +4435,16 @@ function renderM2Metrics() {
   const fx = getCurrentFx();
   
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  
+  // m² maliyeti küçükse ondalık göster (yuvarlama 0 göstermesin)
+  const m2usd = (v) => '$' + (v >= 100 ? fmtNum(v, 0) : fmtNum(v, 2));
+  const m2try = (v) => (v >= 100 ? fmtNum(v, 0) : fmtNum(v, 2)) + ' ₺/m²';
+
   // İnşaat alanı / arsa hariç
   if (totalArea > 0) {
-    set('kpi-m2-const-noland-usd', '$' + fmtNum(noLandUsd / totalArea, 0));
-    set('kpi-m2-const-noland-try', fmtNum(noLandUsd * fx / totalArea, 0) + ' ₺/m²');
-    set('kpi-m2-const-land-usd', '$' + fmtNum(totalBudgetUsd / totalArea, 0));
-    set('kpi-m2-const-land-try', fmtNum(totalBudgetUsd * fx / totalArea, 0) + ' ₺/m²');
+    set('kpi-m2-const-noland-usd', m2usd(noLandUsd / totalArea));
+    set('kpi-m2-const-noland-try', m2try(noLandUsd * fx / totalArea));
+    set('kpi-m2-const-land-usd', m2usd(totalBudgetUsd / totalArea));
+    set('kpi-m2-const-land-try', m2try(totalBudgetUsd * fx / totalArea));
   } else {
     set('kpi-m2-const-noland-usd', '—');
     set('kpi-m2-const-noland-try', '—');
@@ -4450,10 +4453,10 @@ function renderM2Metrics() {
   }
   // Satılabilir alan
   if (salableArea > 0) {
-    set('kpi-m2-sal-noland-usd', '$' + fmtNum(noLandUsd / salableArea, 0));
-    set('kpi-m2-sal-noland-try', fmtNum(noLandUsd * fx / salableArea, 0) + ' ₺/m²');
-    set('kpi-m2-sal-land-usd', '$' + fmtNum(totalBudgetUsd / salableArea, 0));
-    set('kpi-m2-sal-land-try', fmtNum(totalBudgetUsd * fx / salableArea, 0) + ' ₺/m²');
+    set('kpi-m2-sal-noland-usd', m2usd(noLandUsd / salableArea));
+    set('kpi-m2-sal-noland-try', m2try(noLandUsd * fx / salableArea));
+    set('kpi-m2-sal-land-usd', m2usd(totalBudgetUsd / salableArea));
+    set('kpi-m2-sal-land-try', m2try(totalBudgetUsd * fx / salableArea));
   } else {
     set('kpi-m2-sal-noland-usd', '—');
     set('kpi-m2-sal-noland-try', '—');
