@@ -158,15 +158,25 @@ body {
 /* View-mode: action butonlar ve veri girişi kilitli */
 body.view-mode .btn-primary:not(.view-allowed),
 body.view-mode .btn-danger:not(.view-allowed),
-body.view-mode .btn-ghost:not(.view-allowed) {
+body.view-mode .btn-ghost:not(.view-allowed),
+body.lock-readonly .btn-primary:not(.view-allowed),
+body.lock-readonly .btn-danger:not(.view-allowed),
+body.lock-readonly .btn-ghost:not(.view-allowed) {
   opacity: 0.35;
   pointer-events: none;
   cursor: not-allowed;
 }
-body.view-mode .data-table button:not(.view-allowed) {
+body.view-mode .data-table button:not(.view-allowed),
+body.lock-readonly .data-table button:not(.view-allowed) {
   opacity: 0.35;
   pointer-events: none;
   cursor: not-allowed;
+}
+body.lock-readonly input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+body.lock-readonly select,
+body.lock-readonly textarea {
+  pointer-events: none;
+  background: #f5f5f5;
 }
 body.view-mode input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
 body.view-mode select,
@@ -655,6 +665,9 @@ body.view-mode .lock-status * {
 
 <div class="app-shell">
 
+  <!-- DÜZENLEME KİLİDİ BANNER -->
+  <div id="lockBanner" style="display:none;"></div>
+
   <!-- HEADER -->
   <header class="app-header">
     <div class="brand">
@@ -1039,6 +1052,7 @@ body.view-mode .lock-status * {
           <button class="btn btn-primary" onclick="openInvoiceModal()">+ Fatura Ekle</button>
         </div>
       </div>
+      <div id="unmatchedInvoiceWarning"></div>
       <div class="table-filter-wrap">
         <input class="table-filter-input" type="text" placeholder="Filtrele... (fatura no, cari, hesap kodu, açıklama, durum)" oninput="filterTable('invoiceTableBody', this.value, this)" id="filter-invoice">
         <span class="table-filter-count" id="filter-invoice-count"></span>
@@ -1413,6 +1427,12 @@ body.view-mode .lock-status * {
         <div class="form-field">
           <label>Bitiş</label>
           <input type="month" id="setting-endMonth">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label>Senin Adın <span style="font-weight:400;color:var(--text-muted);font-size:11px;">— revize/işlem geçmişinde görünür (bu cihaza özel)</span></label>
+          <input type="text" id="setting-editorName" placeholder="Örn. İbrahim" onchange="saveEditorName(this.value)" style="max-width:300px;">
         </div>
       </div>
       <div class="form-row form-row-3">
@@ -2065,7 +2085,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v4.3 (15.06)';
+const APP_BUILD = 'v4.6 (16.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -2138,6 +2158,8 @@ const DEFAULT_STATE = DEFAULT_PROJECT;
 
 // Tüm uygulama verisi
 let app = JSON.parse(JSON.stringify(DEFAULT_APP));
+// Eşzamanlılık kontrolü: en son Firebase'den yüklenen/yazılan app'in zaman damgası
+let loadedAppStamp = 0;
 // Aktif projenin state'i (app.projects[activeProjectId])
 let state = JSON.parse(JSON.stringify(DEFAULT_PROJECT));
 
@@ -2164,6 +2186,11 @@ async function sha256(text) {
 
 // Veri değiştiren her fonksiyonun başında çağrılır
 function requireEdit() {
+  // Salt-okunur kilit modunda hiçbir düzenleme geçmez
+  if (lockState.isReadOnly && !lockState.hasLock) {
+    alert('🔒 Salt-okunur mod\n\nBu projeyi şu an ' + (lockState.ownerName || 'başka bir kullanıcı') + ' düzenliyor.\n\nO çıkana kadar değişiklik yapamazsın. Üstteki "Tekrar Dene" ile kontrol edebilirsin.');
+    return false;
+  }
   if (editMode || adminMode) return true;
   alert('🔒 Düzenleme kilitli\n\nVeri eklemek/değiştirmek için sağ üstteki kilit ikonuna tıklayıp şifre gir.');
   return false;
@@ -2171,6 +2198,10 @@ function requireEdit() {
 
 // Yönetici-özel işlemler (şifre yönetimi, proje silme, vs)
 function requireAdmin() {
+  if (lockState.isReadOnly && !lockState.hasLock) {
+    alert('🔒 Salt-okunur mod\n\nBu projeyi şu an ' + (lockState.ownerName || 'başka bir kullanıcı') + ' düzenliyor. Değişiklik yapamazsın.');
+    return false;
+  }
   if (adminMode) return true;
   alert('🔑 Yönetici yetkisi gerekli\n\nBu işlem yalnızca yönetici tarafından yapılabilir.');
   return false;
@@ -2460,6 +2491,203 @@ try {
   console.warn('Firebase başlatılamadı, localStorage fallback kullanılacak:', e);
 }
 
+// ============================================================
+// DÜZENLEME KİLİDİ (proje bazlı — Excel benzeri tek yazan)
+// ============================================================
+const LOCK_HEARTBEAT_MS = 30000;   // 30 sn'de bir "buradayım" sinyali
+const LOCK_DEAD_MS = 120000;       // 2 dk sinyal yoksa kilit ölü sayılır
+const CLIENT_ID = 'c_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+
+let lockState = {
+  hasLock: false,        // bu istemci kilidi tutuyor mu
+  projectId: null,       // hangi proje için
+  ownerName: '',         // kilidi tutan kişi (başkasıysa)
+  isReadOnly: false,     // salt okunur modda mıyız
+  heartbeatTimer: null,
+  listener: null,
+  lockRef: null
+};
+
+function lockPath(projectId) { return 'locks/' + sanitizeFirebaseKey(projectId); }
+
+// Bir projenin kilidini devralmaya çalış. Sonuç: 'acquired' | 'readonly'
+async function acquireLock(projectId) {
+  // Firebase yoksa (localStorage modu) — tek kullanıcı, kilit gereksiz
+  if (!firebaseDb) {
+    lockState.hasLock = true; lockState.isReadOnly = false; lockState.projectId = projectId;
+    return 'acquired';
+  }
+  // Önceki kilidi bırak (proje değişimi)
+  await releaseLock();
+
+  const ref = firebaseDb.ref(lockPath(projectId));
+  const myName = getMyEditorName() || 'Bir kullanıcı';
+  const now = Date.now();
+
+  // Transaction: kilit boş veya ölüyse al
+  const result = await ref.transaction(current => {
+    if (current === null) {
+      return { owner: CLIENT_ID, ownerName: myName, heartbeat: now };
+    }
+    // Kendi kilidim (yeniden bağlanma) → tazele
+    if (current.owner === CLIENT_ID) {
+      current.heartbeat = now; current.ownerName = myName; return current;
+    }
+    // Başkasının kilidi — ölü mü?
+    if (now - (current.heartbeat || 0) > LOCK_DEAD_MS) {
+      return { owner: CLIENT_ID, ownerName: myName, heartbeat: now }; // devral
+    }
+    // Canlı kilit — dokunma (transaction iptal)
+    return; // undefined → abort
+  });
+
+  lockState.projectId = projectId;
+  lockState.lockRef = ref;
+
+  if (result.committed && result.snapshot.val() && result.snapshot.val().owner === CLIENT_ID) {
+    // Kilidi aldık
+    lockState.hasLock = true;
+    lockState.isReadOnly = false;
+    lockState.ownerName = myName;
+    // Bağlantı koparsa kilidi otomatik bırak
+    ref.onDisconnect().remove();
+    startHeartbeat();
+    watchLock(projectId);
+    return 'acquired';
+  } else {
+    // Kilit başkasında — salt okunur
+    const cur = result.snapshot.val();
+    lockState.hasLock = false;
+    lockState.isReadOnly = true;
+    lockState.ownerName = (cur && cur.ownerName) || 'Başka bir kullanıcı';
+    watchLock(projectId);
+    return 'readonly';
+  }
+}
+
+function startHeartbeat() {
+  stopHeartbeat();
+  lockState.heartbeatTimer = setInterval(() => {
+    if (lockState.hasLock && lockState.lockRef) {
+      lockState.lockRef.update({ heartbeat: Date.now() }).catch(()=>{});
+    }
+  }, LOCK_HEARTBEAT_MS);
+}
+function stopHeartbeat() {
+  if (lockState.heartbeatTimer) { clearInterval(lockState.heartbeatTimer); lockState.heartbeatTimer = null; }
+}
+
+// Kilidi izle — sahibi değişirse / serbest kalırsa UI güncelle
+function watchLock(projectId) {
+  if (!firebaseDb) return;
+  if (lockState.listener && lockState.lockRef) {
+    lockState.lockRef.off('value', lockState.listener);
+  }
+  const ref = firebaseDb.ref(lockPath(projectId));
+  lockState.lockRef = ref;
+  lockState.listener = ref.on('value', snap => {
+    const cur = snap.val();
+    if (!lockState.hasLock) {
+      // Salt okunur izleyiciyiz — kilit boşaldı mı?
+      if (!cur || Date.now() - (cur.heartbeat || 0) > LOCK_DEAD_MS) {
+        // Kilit serbest! Kullanıcıya bildir
+        showLockFreedBanner();
+      } else {
+        lockState.ownerName = cur.ownerName || 'Başka bir kullanıcı';
+        updateLockBanner();
+      }
+    }
+  });
+}
+
+async function releaseLock() {
+  stopHeartbeat();
+  if (lockState.listener && lockState.lockRef) {
+    try { lockState.lockRef.off('value', lockState.listener); } catch(e){}
+  }
+  if (lockState.hasLock && lockState.lockRef) {
+    try {
+      await lockState.lockRef.onDisconnect().cancel();
+      await lockState.lockRef.remove();
+    } catch(e){}
+  }
+  lockState.hasLock = false;
+  lockState.listener = null;
+  lockState.lockRef = null;
+}
+
+// Sayfa kapanırken kilidi bırak
+window.addEventListener('beforeunload', () => {
+  if (lockState.hasLock && lockState.lockRef) {
+    // senkron deneme — onDisconnect zaten devrede
+    try { lockState.lockRef.remove(); } catch(e){}
+  }
+});
+
+function getMyEditorName() {
+  try { return localStorage.getItem('bna_editor_name') || ''; } catch(e) { return ''; }
+}
+
+// Salt-okunur banner göster/güncelle
+function updateLockBanner() {
+  const el = document.getElementById('lockBanner');
+  if (!el) return;
+  if (lockState.isReadOnly && !lockState.hasLock) {
+    el.style.display = 'block';
+    el.innerHTML = `
+      <div style="background:#fff3cd;border-bottom:2px solid #f0c060;padding:10px 20px;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;">
+        <span style="font-size:18px;">🔒</span>
+        <span style="font-size:13px;color:#6b5300;">
+          <strong>Salt-okunur mod</strong> — Bu projeyi şu an <strong>${escapeHtml(lockState.ownerName)}</strong> düzenliyor.
+          Sen değişiklik yapamazsın; o çıkınca düzenleme açılır.
+        </span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:3px 10px;" onclick="retryLock()">🔄 Tekrar Dene</button>
+      </div>`;
+  } else {
+    el.style.display = 'none';
+    el.innerHTML = '';
+  }
+}
+
+// Kilit serbest kaldığında bildir
+function showLockFreedBanner() {
+  const el = document.getElementById('lockBanner');
+  if (!el) return;
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="background:#d4edda;border-bottom:2px solid #5cb85c;padding:10px 20px;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;">
+      <span style="font-size:18px;">✓</span>
+      <span style="font-size:13px;color:#1e5631;">
+        <strong>Düzenleme açıldı!</strong> Önceki kullanıcı çıktı. Düzenlemeyi devralmak için sayfayı yenile.
+      </span>
+      <button class="btn btn-primary" style="font-size:12px;padding:4px 14px;" onclick="retryLock()">🔄 Düzenlemeyi Devral</button>
+    </div>`;
+}
+
+// Kilidi yeniden almayı dene
+async function retryLock() {
+  const pid = app.meta.activeProjectId;
+  if (!pid) return;
+  const res = await acquireLock(pid);
+  if (res === 'acquired') {
+    lockState.isReadOnly = false;
+    applyLockUI();
+    updateLockBanner();
+    // Güncel veriyi çek ve yeniden render
+    location.reload();
+  } else {
+    updateLockBanner();
+    alert('Proje hâlâ ' + lockState.ownerName + ' tarafından düzenleniyor. Biraz sonra tekrar dene.');
+  }
+}
+
+// Salt-okunur modda düzenleme kontrollerini kilitle
+function applyLockUI() {
+  const ro = lockState.isReadOnly && !lockState.hasLock;
+  document.body.classList.toggle('lock-readonly', ro);
+  updateLockBanner();
+}
+
 // Firebase path'lerinde izin verilmeyen karakterleri temizle
 function sanitizeFirebaseKey(key) {
   return key.replace(/[.#$\[\]\/]/g, '_');
@@ -2717,6 +2945,7 @@ async function loadApp() {
 
   if (localData) {
     app = normalizeApp(localData);
+    loadedAppStamp = app.meta && app.meta.savedAt ? app.meta.savedAt : 0;
     loadActiveProject();
     return;
   }
@@ -2770,7 +2999,14 @@ function loadActiveProject() {
   applyProjectMigrations(state);
 }
 
-async function saveApp() {
+async function saveApp(opts) {
+  opts = opts || {};
+  // Damgayı güncelle
+  if (!app.meta) app.meta = {};
+  app.meta.savedAt = Date.now();
+  app.meta.lastEditedBy = (state.settings && state.settings.editorName) || app.meta.lastEditedBy || '';
+  loadedAppStamp = app.meta.savedAt;
+
   try {
     await persistentStorage.set(APP_KEY, JSON.stringify(app));
   } catch (e) {
@@ -2798,6 +3034,22 @@ async function saveState() {
 // Geriye uyumluluk
 async function loadState() {
   await loadApp();
+}
+
+// Editör adı — cihaz bazlı (localStorage), tarihçede "kim" için
+function saveEditorName(name) {
+  const n = (name || '').trim();
+  try { localStorage.setItem('bna_editor_name', n); } catch(e) {}
+  if (!state.settings) state.settings = {};
+  state.settings.editorName = n;
+}
+function loadEditorName() {
+  let n = '';
+  try { n = localStorage.getItem('bna_editor_name') || ''; } catch(e) {}
+  if (!state.settings) state.settings = {};
+  state.settings.editorName = n;
+  const el = document.getElementById('setting-editorName');
+  if (el) el.value = n;
 }
 
 // ============================================================
@@ -2828,11 +3080,19 @@ async function createNewProject() {
 async function switchProject(id) {
   if (id === app.meta.activeProjectId) return;
   if (!app.projects[id]) { alert('Proje bulunamadı'); return; }
+  // Eski projenin kilidini bırak
+  await releaseLock();
   app.meta.activeProjectId = id;
   state = app.projects[id];
   applyProjectMigrations(state);
   await saveApp();
+  // Yeni proje için kilit al
+  try {
+    const lockRes = await acquireLock(id);
+    lockState.isReadOnly = (lockRes === 'readonly');
+  } catch (e) { console.warn('Kilit alınamadı:', e); }
   renderAll();
+  applyLockUI();
 }
 
 async function renameActiveProject() {
@@ -3402,6 +3662,24 @@ function getInvoicesForBudgetItem(b) {
   });
 }
 
+// Bir fatura herhangi bir bütçe kalemine bağlanıyor mu?
+function isInvoiceMatched(inv) {
+  if (!inv.code || !inv.code.trim()) return false;
+  const invCode = inv.code.trim();
+  return state.budget.some(b => {
+    if (!b.code) return false;
+    const bCode = b.code.trim();
+    // Fatura bu kaleme ya da bu kalemin alt kalemine denk geliyor mu
+    return invCode === bCode || invCode.startsWith(bCode + '.') || invCode.startsWith(bCode + '-')
+        || bCode === invCode || bCode.startsWith(invCode + '.') || bCode.startsWith(invCode + '-');
+  });
+}
+
+// Eşleşmeyen faturaları döndür (gerçekleşmeye girmeyen — sessiz hata riski)
+function getUnmatchedInvoices() {
+  return state.invoices.filter(inv => !isInvoiceMatched(inv));
+}
+
 // Bir bütçe kalemi için gerçekleşen toplam USD
 function getBudgetItemActualUsd(b) {
   if (!isBudgetLeaf(b)) {
@@ -3471,14 +3749,50 @@ async function reviseBudgetItem(id) {
   );
   if (input === null) return; // iptal
   const valTry = parseDecimal(input);
+  const eskiRevUsd = b.revisedBudgetUsd;
+
+  // Gerekçe sor (tarihçe için)
+  let gerekce = '';
+  if (valTry && valTry > 0) {
+    gerekce = prompt('Revize gerekçesi (sunum/rapor için — opsiyonel):', '') || '';
+  }
+
   if (!valTry || valTry <= 0) {
     delete b.revisedBudgetUsd;
   } else {
-    // TL girildi → USD'ye çevir (saklanan değer USD)
     b.revisedBudgetUsd = fx > 0 ? valTry / fx : valTry;
   }
+
+  // Revize tarihçesine kaydet
+  if (!b.revisedHistory) b.revisedHistory = [];
+  b.revisedHistory.push({
+    tarih: new Date().toISOString(),
+    eskiTry: eskiRevUsd != null ? eskiRevUsd * fx : basTry,
+    yeniTry: (!valTry || valTry <= 0) ? null : valTry,
+    fx,
+    gerekce,
+    kim: (state.settings && state.settings.editorName) || ''
+  });
+
   await saveState();
   renderBudgetTable();
+}
+
+// Revize tarihçesini göster
+function showReviseHistory(id) {
+  const b = state.budget.find(x => String(x.id) === String(id));
+  if (!b || !b.revisedHistory || b.revisedHistory.length === 0) {
+    alert('Bu kalem için revize geçmişi yok.');
+    return;
+  }
+  let msg = `"${b.name}" — Revize Geçmişi\n\n`;
+  b.revisedHistory.slice().reverse().forEach((h, i) => {
+    const t = new Date(h.tarih).toLocaleString('tr-TR');
+    const eski = h.eskiTry != null ? fmtTL(h.eskiTry) : '(yok)';
+    const yeni = h.yeniTry != null ? fmtTL(h.yeniTry) : '(iptal)';
+    msg += `${t}\n  ${eski} → ${yeni}${h.kim ? '  ['+h.kim+']' : ''}\n${h.gerekce ? '  Gerekçe: '+h.gerekce+'\n' : ''}\n`;
+  });
+  alert(msg);
 }
 function getTargetDate() {
   const el = document.getElementById('targetDate');
@@ -3731,9 +4045,11 @@ function computeOverallProgress() {
       if (p && p.start && (!minStart || p.start < minStart)) minStart = p.start;
     });
     if (minStart) {
-      const startD = new Date(minStart + '-01');
+      // Format: YYYY-MM-DD (gün bazlı) veya YYYY-MM (eski ay bazlı)
+      const startStr = minStart.length === 7 ? minStart + '-01' : minStart;
+      const startD = new Date(startStr);
       const elapsedMs = target - startD;
-      if (elapsedMs > 0) {
+      if (!isNaN(startD.getTime()) && elapsedMs > 0) {
         const totalMs = elapsedMs * (totalBudget / totalActualUsd);
         etaDate = new Date(startD.getTime() + totalMs);
       }
@@ -3992,22 +4308,31 @@ function renderKpis() {
   
   const eta = document.getElementById('kpi-eta');
   const etaDelay = document.getElementById('kpi-eta-delay');
-  if (overall.etaDate) {
+  if (overall.etaDate && !isNaN(overall.etaDate.getTime())) {
     eta.textContent = overall.etaDate.toLocaleDateString('tr-TR', { month: 'short', year: 'numeric' });
-    // Plan bitişiyle karşılaştır
+    // Plan bitişi: önce ayarlardan, yoksa iş programındaki en geç bitiş
+    let planEnd = null;
     if (state.settings.endMonth) {
-      const planEnd = new Date(state.settings.endMonth + '-15');
-      const diffMs = overall.etaDate - planEnd;
-      const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
-      if (diffDays > 30) etaDelay.textContent = `Plana göre ~${diffDays} gün gecikme`;
+      planEnd = new Date(state.settings.endMonth + '-15');
+    } else {
+      let maxEnd = null;
+      Object.values(state.program || {}).forEach(p => {
+        if (p && p.end && (!maxEnd || p.end > maxEnd)) maxEnd = p.end;
+      });
+      if (maxEnd) planEnd = new Date(maxEnd.length === 7 ? maxEnd + '-15' : maxEnd);
+    }
+    if (planEnd && !isNaN(planEnd.getTime())) {
+      const diffDays = Math.round((overall.etaDate - planEnd) / (1000 * 60 * 60 * 24));
+      if (diffDays > 3650) etaDelay.textContent = 'Gerçekleşme çok düşük — tahmin güvenilir değil';
+      else if (diffDays > 30) etaDelay.textContent = `Plana göre ~${diffDays} gün gecikme`;
       else if (diffDays < -30) etaDelay.textContent = `Plana göre ~${-diffDays} gün önde`;
       else etaDelay.textContent = 'Plan dahilinde';
     } else {
-      etaDelay.textContent = '—';
+      etaDelay.textContent = 'Plan bitişi tanımlı değil';
     }
   } else {
     eta.textContent = '—';
-    etaDelay.textContent = 'Hesaplama için fatura gerekli';
+    etaDelay.textContent = 'Hesaplama için fatura ve iş programı başlangıcı gerekli';
   }
 
   // Teminat mektubu uyarısı — özet sayfasında
@@ -4316,7 +4641,7 @@ function renderBudgetTable() {
       <td class="center" style="white-space:nowrap;">
         <button class="btn btn-icon btn-ghost" onclick="editBudgetItem('${b.id}')">Düzenle</button>
         <button class="btn btn-danger" onclick="deleteBudgetItem('${b.id}')">Sil</button>
-        <button class="btn btn-ghost" style="font-size:11px;padding:2px 6px;" onclick="reviseBudgetItem('${b.id}')">Revize</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:2px 6px;" onclick="reviseBudgetItem('${b.id}')">Revize</button>${(b.revisedHistory && b.revisedHistory.length) ? `<button class="btn btn-ghost" style="font-size:11px;padding:2px 5px;" onclick="showReviseHistory('${b.id}')" title="${b.revisedHistory.length} revize — geçmişi gör">🕘</button>` : ''}
       </td>
     `;
     tbody.appendChild(tr);
@@ -4488,10 +4813,37 @@ function renderInvoiceTable() {
   const tbody = document.getElementById('invoiceTableBody');
   tbody.innerHTML = '';
   const sorted = [...state.invoices].sort((a, b) => new Date(b.date) - new Date(a.date));
-  
+
+  // Eşleşmeyen fatura uyarı paneli
+  const warnEl = document.getElementById('unmatchedInvoiceWarning');
+  if (warnEl) {
+    const unmatched = getUnmatchedInvoices();
+    if (unmatched.length > 0) {
+      const toplam = unmatched.reduce((s, inv) => s + calcInvoiceTotals(inv).grandTotal, 0);
+      warnEl.innerHTML = `
+        <div style="padding:12px 16px;border-radius:8px;margin-bottom:12px;background:#fdecea;border:1px solid #f5c6c6;">
+          <div style="font-weight:600;font-size:13px;margin-bottom:6px;color:#a44132;">
+            ⚠ ${unmatched.length} fatura hiçbir bütçe kalemine bağlı değil (${fmtTL(toplam)})
+          </div>
+          <div style="font-size:12px;color:#6b4a3a;margin-bottom:8px;">
+            Bu faturalar gerçekleşmeye <strong>girmez</strong> — bütçe karşılaştırması eksik kalır. Hesap kodlarını kontrol et:
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${unmatched.map(inv => `
+              <span style="padding:3px 8px;background:white;border:1px solid #f5c6c6;border-radius:4px;font-size:11px;cursor:pointer;" onclick="editInvoice('${inv.id}')" title="Düzelt">
+                ${escapeHtml(inv.supplier || inv.invoiceNo || '?')} · <span class="mono">${inv.code || '(kod yok)'}</span> ✎
+              </span>`).join('')}
+          </div>
+        </div>`;
+    } else {
+      warnEl.innerHTML = '';
+    }
+  }
+
   sorted.forEach(inv => {
     const c = calcInvoiceTotals(inv);
     const typeLabel = getCategoryLabel(inv.type);
+    const matched = isInvoiceMatched(inv);
     const attachBadge = inv.hasAttachment 
       ? `<button class="btn btn-icon btn-ghost" onclick="viewInvoiceAttachment('${inv.id}')" title="Faturayı görüntüle" style="padding: 2px 6px;">📎</button>` : '';
     
@@ -4510,7 +4862,7 @@ function renderInvoiceTable() {
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td class="mono">${inv.code || '—'}</td>
+      <td class="mono">${inv.code ? (matched ? inv.code : `<span style="color:#a44132;" title="Hiçbir bütçe kalemine bağlı değil">${inv.code} ⚠</span>`) : '<span style="color:#a44132;" title="Hesap kodu yok">— ⚠</span>'}</td>
       <td class="mono">${inv.invoiceNo || '—'}</td>
       <td>${inv.supplier || '—'} ${attachBadge}</td>
       <td class="center">${fmtDate(inv.date)}</td>
@@ -4820,6 +5172,7 @@ function renderCashflowTable() {
 
 function renderSettings() {
   document.getElementById('setting-projectName').value = state.settings.projectName || '';
+  loadEditorName();
   document.getElementById('setting-startMonth').value = state.settings.startMonth || '';
   document.getElementById('setting-endMonth').value = state.settings.endMonth || '';
   document.getElementById('setting-totalArea').value = state.settings.totalArea || '';
@@ -8663,17 +9016,25 @@ function downloadCsv(filename, headers, rows) {
 // INIT — DOMContentLoaded sonrası çalış
 async function _bna_init() {
   await loadApp();
+  // Aktif proje için düzenleme kilidi al (Excel benzeri tek yazan)
+  const activePid = app.meta.activeProjectId;
+  if (activePid) {
+    try {
+      const lockRes = await acquireLock(activePid);
+      lockState.isReadOnly = (lockRes === 'readonly');
+    } catch (e) { console.warn('Kilit alınamadı:', e); }
+  }
   // Yönetici şifresi yoksa edit-mode'da aç (sistem henüz kurulmamış)
-  // Yönetici şifresi varsa view-mode'da aç (şifre gerekli)
   if (!app.meta.adminPasswordHash) {
     editMode = true;
-    adminMode = false; // gerçek admin olmadan adminMode true olmasın
+    adminMode = false;
   } else {
     editMode = false;
     adminMode = false;
   }
   renderAll();
   updateLockUI();
+  applyLockUI();
   updateStorageIndicator();
   const bb = document.getElementById('buildBadge');
   if (bb) bb.textContent = APP_BUILD;
