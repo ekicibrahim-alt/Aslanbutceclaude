@@ -964,10 +964,12 @@ body.view-mode .lock-status * {
               <th class="right kdv-col" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(47,107,72,0.05);">Baz KDV Dahil</th>
               <th class="right" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(184,134,61,0.06);">Revize Bütçe</th>
               <th class="right kdv-col" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(47,107,72,0.05);">Revize KDV Dahil</th>
-              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Gerçekleşme</th>
+              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);" title="Faturalanan iş (fiziksel ilerleme) — fatura kesilince">İş Gerçekleşmesi</th>
               <th class="right kdv-col" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(47,107,72,0.05);">Gerç. KDV Dahil</th>
               <th class="right" rowspan="2" style="background: rgba(184,134,61,0.08);" title="Bu kalemden 3. tarafa (yemekçi, İSG vb) yansıtılan tutar — bu kalemde harcanmış sayılır">Yansıtılan<br><span style="font-size:9px;color:var(--text-muted);">TL</span></th>
-              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);">Gerçek Kalan</th>
+              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border); background:rgba(30,58,95,0.04);" title="Fiilen ödenen nakit — avans (peşin) + fatura ödemeleri">Ödenen (Nakit)</th>
+              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border); background:rgba(30,58,95,0.07);" title="Revize − Ödenen = daha çıkacak para">Kalan Ödeme</th>
+              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);" title="Baz/Revize − İş Gerçekleşmesi − Yansıtılan (bütçe sapması)">Gerçek Kalan</th>
               <th class="right kdv-col" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(47,107,72,0.05);">Kalan KDV Dahil</th>
               <th class="center" rowspan="2">Durum</th>
               <th class="center" rowspan="2"></th>
@@ -985,6 +987,10 @@ body.view-mode .lock-status * {
               <th class="right" style="font-size: 10px; color: #2f6b48;">TL</th>
               <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">USD</th>
               <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">TL</th>
+              <th class="right" style="font-size: 10px; color: #1e3a5f; background:rgba(30,58,95,0.04);">USD</th>
+              <th class="right" style="font-size: 10px; color: #1e3a5f; background:rgba(30,58,95,0.04);">TL</th>
+              <th class="right" style="font-size: 10px; color: #1e3a5f; background:rgba(30,58,95,0.07);">USD</th>
+              <th class="right" style="font-size: 10px; color: #1e3a5f; background:rgba(30,58,95,0.07);">TL</th>
               <th class="right" style="font-size: 10px; color: var(--text-muted);">USD</th>
               <th class="right" style="font-size: 10px; color: var(--text-muted);">TL</th>
               <th class="right kdv-col" style="font-size: 10px; color: #2f6b48; background: rgba(47,107,72,0.05);">USD</th>
@@ -1624,13 +1630,14 @@ body.view-mode .lock-status * {
     </div>
     <div class="form-row form-row-2">
       <div class="form-field"><label>Avans Tutarı (TL) *</label><input type="text" id="av-tutar" placeholder="0,00"></div>
-      <div class="form-field"><label>Tarih *</label><input type="date" id="av-tarih"></div>
+      <div class="form-field"><label>Tarih *</label><input type="date" id="av-tarih" onchange="updateAvansFxHint()"></div>
     </div>
-    <div class="form-row">
-      <div class="form-field"><label>Not</label><input type="text" id="av-not" placeholder="Sözleşme avansı, malzeme avansı..."></div>
+    <div class="form-row form-row-2">
+      <div class="form-field"><label>Kur (USD/TRY) <span style="font-weight:400;color:var(--text-muted);font-size:11px;">— o günkü kur, dolar sabitlenir</span></label><input type="text" id="av-fx" placeholder="örn. 40,50"></div>
+      <div class="form-field"><label>Not</label><input type="text" id="av-not" placeholder="Sözleşme avansı..."></div>
     </div>
     <div style="padding:10px 12px;background:rgba(47,107,72,0.06);border-radius:6px;font-size:12px;color:#2f6b48;margin-bottom:12px;">
-      ℹ️ Avans nakit çıkışıdır ama maliyet değildir — bütçe gerçekleşmesine girmez. Hakedişlerden "Avans Mahsubu" kesintisiyle geri alınır.
+      ℹ️ Avans nakit çıkışıdır — <strong>Ödenen</strong>'e hemen girer, dolar verildiği günün kuruyla sabitlenir. İş gerçekleşmesine (fiziksel ilerleme) girmez. Hakedişten "Avans Mahsubu" ile geri alınır.
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeAvansModal()">İptal</button>
@@ -2085,7 +2092,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v4.7 (16.06)';
+const APP_BUILD = 'v4.8 (16.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -2796,7 +2803,7 @@ function applyProjectMigrations(p) {
   p.teminatMektuplari = p.teminatMektuplari || [];
   p.avanslar = p.avanslar || [];
   p.avanslar = p.avanslar.map(a => {
-    if (!a.girisler) return { ...a, girisler: [{ tarih: a.tarih, tutar: a.tutar, not: a.not || '' }] };
+    if (!a.girisler) return { ...a, girisler: [{ tarih: a.tarih, tutar: a.tutar, not: a.not || '', fx: 0 }] };
     return a;
   });
   p.teminatIadeleri = p.teminatIadeleri || [];
@@ -3680,6 +3687,65 @@ function getUnmatchedInvoices() {
   return state.invoices.filter(inv => !isInvoiceMatched(inv));
 }
 
+// ─────────────────────────────────────────────────────────────
+// İŞ GERÇEKLEŞMESİ (tahakkuk) — fatura kesilince, fiziksel ilerleme
+// getBudgetItemActualTry/Usd = faturalanan net (yansıtma+ceza düşülmüş)
+// ─────────────────────────────────────────────────────────────
+
+// Bu kaleme ait avans girişlerinin toplamı (TL) — mahsuptan bağımsız brüt verilen
+function getBudgetItemAvansVerilenTry(b) {
+  if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemAvansVerilenTry(leaf), 0);
+  const bCode = String(b.code || '').trim();
+  let sum = 0;
+  (state.avanslar || []).forEach(av => {
+    const aCode = String(av.code || '').trim();
+    const eslesir = aCode && (aCode === bCode || aCode.startsWith(bCode + '.') || bCode.startsWith(aCode + '.'));
+    if (eslesir) (av.girisler || []).forEach(g => { sum += (g.tutar || 0); });
+  });
+  return sum;
+}
+function getBudgetItemAvansVerilenUsd(b) {
+  if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemAvansVerilenUsd(leaf), 0);
+  const bCode = String(b.code || '').trim();
+  const fx = getBudgetItemFx(b);
+  let sum = 0;
+  (state.avanslar || []).forEach(av => {
+    const aCode = String(av.code || '').trim();
+    const eslesir = aCode && (aCode === bCode || aCode.startsWith(bCode + '.') || bCode.startsWith(aCode + '.'));
+    if (eslesir) (av.girisler || []).forEach(g => { sum += (g.tutar || 0) / (g.fx && g.fx > 0 ? g.fx : fx); });
+  });
+  return sum;
+}
+
+// ÖDENEN (nakit) TL = avans girişleri + fatura taksit ödemeleri
+// (avans mahsubu net ödeneceği düşürdüğü için fatura taksitleri avans-üstü kısmı temsil eder → çift sayım yok)
+function getBudgetItemOdenenTry(b) {
+  if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemOdenenTry(leaf), 0);
+  let sum = getBudgetItemAvansVerilenTry(b);
+  getInvoicesForBudgetItem(b).forEach(inv => {
+    const c = calcInvoiceTotals(inv);
+    sum += (c.totalPaid || 0); // taksitlerde fiilen ödenen
+  });
+  return sum;
+}
+function getBudgetItemOdenenUsd(b) {
+  if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemOdenenUsd(leaf), 0);
+  const fx = getBudgetItemFx(b);
+  let sum = getBudgetItemAvansVerilenUsd(b);
+  getInvoicesForBudgetItem(b).forEach(inv => {
+    const c = calcInvoiceTotals(inv);
+    const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
+    sum += (c.totalPaid || 0) / invFx;
+  });
+  return sum;
+}
+
+// FATURALANAN (tahakkuk, brüt hakediş) — ödenmemiş bakiye için
+function getBudgetItemFaturalananTry(b) {
+  if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemFaturalananTry(leaf), 0);
+  return getInvoicesForBudgetItem(b).reduce((s, inv) => s + (calcInvoiceTotals(inv).grandTotal || 0), 0);
+}
+
 // Bir bütçe kalemi için gerçekleşen toplam USD
 function getBudgetItemActualUsd(b) {
   if (!isBudgetLeaf(b)) {
@@ -4527,6 +4593,7 @@ function renderBudgetTable() {
   let totalKdvUsd=0, totalKdvTry=0, totalGrossUsd=0, totalGrossTry=0;
   let totalActGrossUsd=0, totalActGrossTry=0, totalRevGrossUsd=0;
   let totalYansUsd=0, totalYansTry=0;
+  let totalOdenenUsd=0, totalOdenenTry=0;
 
   sorted.forEach(b => {
     const isLeaf = isBudgetLeaf(b);
@@ -4553,6 +4620,12 @@ function renderBudgetTable() {
     // Gerçek Kalan = Baz − Gerçekleşme − Yansıtılan (Seçenek A)
     const remUsd  = effUsd - actUsd - yansUsd;
     const remTry  = effTry - actTry - yansTry;
+    // Ödenen (nakit) = avans + fatura ödemeleri
+    const odenenUsd = getBudgetItemOdenenUsd(b);
+    const odenenTry = getBudgetItemOdenenTry(b);
+    // Kalan Ödeme = Revize − Ödenen (daha çıkacak para)
+    const kalanOdemeUsd = effUsd - odenenUsd;
+    const kalanOdemeTry = effTry - odenenTry;
 
     if (isRootBudgetItem(b)) {
       totalBaseUsd += baseUsd; totalBaseTry += baseTry;
@@ -4561,6 +4634,7 @@ function renderBudgetTable() {
       totalActUsd += actUsd; totalActTry += actTry;
       totalRemUsd += remUsd; totalRemTry += remTry;
       totalYansUsd += yansUsd; totalYansTry += yansTry;
+      totalOdenenUsd += odenenUsd; totalOdenenTry += odenenTry;
       totalKdvUsd += kdvUsd; totalKdvTry += kdvTry;
       totalGrossUsd += grossUsd; totalGrossTry += grossTry;
       totalActGrossUsd += getBudgetItemActualGrossUsd(b);
@@ -4636,6 +4710,10 @@ function renderBudgetTable() {
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${actGrossUsd>0?fmtUSD(actGrossUsd):'—'}</td>
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${actGrossTry>0?fmtTL(actGrossTry):'—'}</td>
       <td class="right" style="background:rgba(184,134,61,0.06);color:${yansTry>0?'var(--accent)':'var(--text-muted)'};">${yansTry>0?fmtTL(yansTry):'—'}</td>
+      <td class="right" style="background:rgba(30,58,95,0.03);color:#1e3a5f;">${odenenUsd>0.5?fmtUSD(odenenUsd):'—'}</td>
+      <td class="right" style="background:rgba(30,58,95,0.03);color:#1e3a5f;">${odenenTry>0.5?fmtTL(odenenTry):'—'}</td>
+      <td class="right" style="background:rgba(30,58,95,0.06);color:#1e3a5f;font-weight:600;">${fmtUSD(kalanOdemeUsd)}</td>
+      <td class="right" style="background:rgba(30,58,95,0.06);color:#1e3a5f;font-weight:600;">${fmtTL(kalanOdemeTry)}</td>
       <td class="right" style="${remColor}">${fmtUSD(remUsd)}</td>
       <td class="right" style="${remColor}">${fmtTL(remTry)}</td>
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtUSD(remGrossUsd)}</td>
@@ -4656,6 +4734,9 @@ function renderBudgetTable() {
     const totRevGross = hasAnyRevise ? totalRevGrossUsd : totalGrossUsd;
     const totRemGrossUsd = totRevGross - totalActGrossUsd - totalYansUsd;
     const totRemGrossTry = (totRevGross * fx) - totalActGrossTry - totalYansTry;
+    // Kalan Ödeme = Revize − Ödenen
+    const totKalanOdemeUsd = (hasAnyRevise ? totalRevUsd : totalBaseUsd) - totalOdenenUsd;
+    const totKalanOdemeTry = (hasAnyRevise ? totalRevTry : totalBaseTry) - totalOdenenTry;
     const tr = document.createElement('tr');
     tr.style.cssText = 'font-weight:700;background:rgba(30,58,95,0.06);border-bottom:2px solid var(--border-strong);';
     tr.innerHTML = `
@@ -4673,6 +4754,10 @@ function renderBudgetTable() {
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${totalActGrossUsd>0?fmtUSD(totalActGrossUsd):'—'}</td>
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${totalActGrossTry>0?fmtTL(totalActGrossTry):'—'}</td>
       <td class="right" style="background:rgba(184,134,61,0.06);color:${totalYansTry>0?'var(--accent)':'var(--text-muted)'};">${totalYansTry>0?fmtTL(totalYansTry):'—'}</td>
+      <td class="right" style="background:rgba(30,58,95,0.03);color:#1e3a5f;">${totalOdenenUsd>0.5?fmtUSD(totalOdenenUsd):'—'}</td>
+      <td class="right" style="background:rgba(30,58,95,0.03);color:#1e3a5f;">${totalOdenenTry>0.5?fmtTL(totalOdenenTry):'—'}</td>
+      <td class="right" style="background:rgba(30,58,95,0.06);color:#1e3a5f;font-weight:700;">${fmtUSD(totKalanOdemeUsd)}</td>
+      <td class="right" style="background:rgba(30,58,95,0.06);color:#1e3a5f;font-weight:700;">${fmtTL(totKalanOdemeTry)}</td>
       <td class="right" style="${totRemUsd<0?'color:#a44132;font-weight:700;':''}">${fmtUSD(totRemUsd)}</td>
       <td class="right" style="${totRemTry<0?'color:#a44132;font-weight:700;':''}">${fmtTL(totRemTry)}</td>
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtUSD(totRemGrossUsd)}</td>
@@ -4986,14 +5071,17 @@ function computeCashflow() {
     }
   });
 
-  // AVANS VERME: nakit çıkışı (verildiği ay)
+  // AVANS VERME: nakit çıkışı (her giriş kendi ayında, kendi kuruyla)
   (state.avanslar || []).forEach(av => {
-    const m = (av.tarih || '').substring(0, 7);
-    const row = data.find(d => d.month === m);
-    if (row) {
-      row.actualTry += (av.tutar || 0);
-      row.actualUsd += (av.tutar || 0) / row.fx;
-    }
+    const girisler = av.girisler && av.girisler.length ? av.girisler : [{ tarih: av.tarih, tutar: av.tutar, fx: 0 }];
+    girisler.forEach(g => {
+      const m = (g.tarih || '').substring(0, 7);
+      const row = data.find(d => d.month === m);
+      if (row) {
+        row.actualTry += (g.tutar || 0);
+        row.actualUsd += (g.tutar || 0) / (g.fx && g.fx > 0 ? g.fx : row.fx);
+      }
+    });
   });
 
   // TEMİNAT İADESİ: nakit çıkışı (iade edildiği ay)
@@ -7205,10 +7293,23 @@ function openAvansModal() {
   document.getElementById('av-code').value = '';
   document.getElementById('av-tutar').value = '';
   document.getElementById('av-tarih').value = new Date().toISOString().substring(0,10);
+  document.getElementById('av-fx').value = '';
   document.getElementById('av-not').value = '';
+  updateAvansFxHint();
   document.getElementById('avansModal').classList.add('active');
 }
 function closeAvansModal() { document.getElementById('avansModal').classList.remove('active'); }
+
+// Tarihe göre kur ipucu (boşsa otomatik doldur)
+function updateAvansFxHint() {
+  const tarih = document.getElementById('av-tarih').value;
+  const fxEl = document.getElementById('av-fx');
+  if (fxEl && !fxEl.value && tarih) {
+    const m = tarih.substring(0, 7);
+    const fx = getFxForMonth ? getFxForMonth(m) : getCurrentFx();
+    if (fx) fxEl.value = fmtNum(fx, 2);
+  }
+}
 
 function editAvans(id) {
   if (!requireEdit()) return;
@@ -7220,6 +7321,8 @@ function editAvans(id) {
   document.getElementById('av-code').value = av.code || '';
   document.getElementById('av-tutar').value = av.tutar || '';
   document.getElementById('av-tarih').value = av.tarih || '';
+  const g0 = (av.girisler && av.girisler[0]) || {};
+  document.getElementById('av-fx').value = g0.fx ? fmtNum(g0.fx, 2) : '';
   document.getElementById('av-not').value = av.not || '';
   document.getElementById('avansModal').classList.add('active');
 }
@@ -7230,31 +7333,30 @@ async function saveAvans() {
   const tarih = document.getElementById('av-tarih').value;
   const code = document.getElementById('av-code').value.trim();
   const not = document.getElementById('av-not').value.trim();
+  let fx = parseDecimal(document.getElementById('av-fx').value);
   if (!supplier) { alert('Tedarikçi zorunlu'); return; }
   if (!tutar || tutar <= 0) { alert('Avans tutarı zorunlu'); return; }
   if (!tarih) { alert('Tarih zorunlu'); return; }
+  if (!fx || fx <= 0) { fx = getFxForMonth ? getFxForMonth(tarih.substring(0,7)) : getCurrentFx(); }
   if (!state.avanslar) state.avanslar = [];
 
-  const giris = { tarih, tutar, not };
+  const giris = { tarih, tutar, not, fx };
 
   if (editingAvansId) {
-    // Mevcut havuzu düzenleme — tüm girişi tek girişe indirger (basit düzeltme)
     const idx = state.avanslar.findIndex(a => String(a.id) === String(editingAvansId));
     if (idx >= 0) {
       state.avanslar[idx].supplier = supplier;
       state.avanslar[idx].code = code;
-      // Düzenlemede: tek giriş varsa onu güncelle, çoksa uyar
-      if (!state.avanslar[idx].girisler) state.avanslar[idx].girisler = [{ tarih: state.avanslar[idx].tarih, tutar: state.avanslar[idx].tutar, not: state.avanslar[idx].not }];
+      if (!state.avanslar[idx].girisler) state.avanslar[idx].girisler = [{ tarih: state.avanslar[idx].tarih, tutar: state.avanslar[idx].tutar, not: state.avanslar[idx].not, fx }];
       if (state.avanslar[idx].girisler.length === 1) {
         state.avanslar[idx].girisler[0] = giris;
       }
       state.avanslar[idx].tutar = state.avanslar[idx].girisler.reduce((s,x)=>s+(x.tutar||0),0);
     }
   } else {
-    // Yeni giriş: aynı firma+iş havuzu var mı?
     const mevcut = state.avanslar.find(a => a.supplier === supplier && (a.code||'') === code);
     if (mevcut) {
-      if (!mevcut.girisler) mevcut.girisler = [{ tarih: mevcut.tarih, tutar: mevcut.tutar, not: mevcut.not }];
+      if (!mevcut.girisler) mevcut.girisler = [{ tarih: mevcut.tarih, tutar: mevcut.tutar, not: mevcut.not, fx }];
       mevcut.girisler.push(giris);
       mevcut.tutar = mevcut.girisler.reduce((s,x)=>s+(x.tutar||0),0);
     } else {
@@ -7285,7 +7387,9 @@ function addAvansToPool(id) {
   document.getElementById('av-code').value = av.code || '';
   document.getElementById('av-tutar').value = '';
   document.getElementById('av-tarih').value = new Date().toISOString().substring(0,10);
+  document.getElementById('av-fx').value = '';
   document.getElementById('av-not').value = '';
+  updateAvansFxHint();
   document.getElementById('avansModal').classList.add('active');
 }
 
