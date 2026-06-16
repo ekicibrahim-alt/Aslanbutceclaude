@@ -1141,6 +1141,36 @@ body.view-mode .lock-status * {
       </div>
     </div>
 
+    <!-- TAŞERON CARİ DURUMU -->
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">📋 Taşeron / Cari Durumu</h2>
+        <span style="font-size:12px;color:var(--text-muted);">Her kalem için: verilen avans, faturalanan iş, ödenen, taşeronda duran avans ve ödenmemiş borç</span>
+      </div>
+      <div class="table-filter-wrap">
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (tedarikçi, hesap kodu)" oninput="filterTable('cariTableBody', this.value, this)" id="filter-cari">
+        <span class="table-filter-count" id="filter-cari-count"></span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-cari','cariTableBody','filter-cari-count')">Temizle</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Hesap Kodu</th>
+              <th>Tedarikçi</th>
+              <th class="right" title="Toplam verilen avans">Verilen Avans</th>
+              <th class="right" title="Avansın işe dönüşmüş (mahsup) kısmı">Mahsup</th>
+              <th class="right" style="background:rgba(184,134,61,0.06);" title="Taşeronda duran, henüz mahsup edilmemiş avans (alacağın)">Avans Bakiyesi</th>
+              <th class="right" title="Kesilen toplam hakediş (KDV dahil)">Faturalanan</th>
+              <th class="right" style="background:rgba(30,58,95,0.04);" title="Mahsup avans + fatura taksit ödemeleri">Ödenen</th>
+              <th class="right" style="background:rgba(164,65,50,0.05);" title="Faturalandı ama ödenmedi (taşerona borcun)">Ödenmemiş Borç</th>
+            </tr>
+          </thead>
+          <tbody id="cariTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- TEMİNATLAR -->
     <div class="section">
       <div class="section-header">
@@ -2092,7 +2122,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v4.8 (16.06)';
+const APP_BUILD = 'v4.9 (16.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -3717,21 +3747,46 @@ function getBudgetItemAvansVerilenUsd(b) {
   return sum;
 }
 
-// ÖDENEN (nakit) TL = avans girişleri + fatura taksit ödemeleri
-// (avans mahsubu net ödeneceği düşürdüğü için fatura taksitleri avans-üstü kısmı temsil eder → çift sayım yok)
+// MAHSUP EDİLEN avans (bu kaleme ait faturalardaki avans kesintileri) — işe fiilen dönüşen avans
+function getBudgetItemAvansMahsupTry(b) {
+  if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemAvansMahsupTry(leaf), 0);
+  return getInvoicesForBudgetItem(b).reduce((sum, inv) => {
+    return sum + (inv.kesintiler || []).reduce((s, k) => s + (k.tip === 'avans' ? (k.tutar || 0) : 0), 0);
+  }, 0);
+}
+function getBudgetItemAvansMahsupUsd(b) {
+  if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemAvansMahsupUsd(leaf), 0);
+  const fx = getBudgetItemFx(b);
+  return getInvoicesForBudgetItem(b).reduce((sum, inv) => {
+    const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
+    const m = (inv.kesintiler || []).reduce((s, k) => s + (k.tip === 'avans' ? (k.tutar || 0) : 0), 0);
+    return sum + m / invFx;
+  }, 0);
+}
+
+// AVANS BAKİYESİ = verilen − mahsup (taşeronda duran, henüz işe dönüşmemiş para)
+function getBudgetItemAvansBakiyeTry(b) {
+  return getBudgetItemAvansVerilenTry(b) - getBudgetItemAvansMahsupTry(b);
+}
+function getBudgetItemAvansBakiyeUsd(b) {
+  return getBudgetItemAvansVerilenUsd(b) - getBudgetItemAvansMahsupUsd(b);
+}
+
+// ÖDENEN (işe fiilen mal olan) TL = MAHSUP EDİLEN avans + fatura taksit ödemeleri
+// (verilen avansın tamamı değil — mahsup edilmemiş kısım "avans bakiyesi" olarak ayrı durur)
 function getBudgetItemOdenenTry(b) {
   if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemOdenenTry(leaf), 0);
-  let sum = getBudgetItemAvansVerilenTry(b);
+  let sum = getBudgetItemAvansMahsupTry(b);
   getInvoicesForBudgetItem(b).forEach(inv => {
     const c = calcInvoiceTotals(inv);
-    sum += (c.totalPaid || 0); // taksitlerde fiilen ödenen
+    sum += (c.totalPaid || 0); // taksitlerde fiilen ödenen (avans üstü kısım)
   });
   return sum;
 }
 function getBudgetItemOdenenUsd(b) {
   if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemOdenenUsd(leaf), 0);
   const fx = getBudgetItemFx(b);
-  let sum = getBudgetItemAvansVerilenUsd(b);
+  let sum = getBudgetItemAvansMahsupUsd(b);
   getInvoicesForBudgetItem(b).forEach(inv => {
     const c = calcInvoiceTotals(inv);
     const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
@@ -7179,6 +7234,7 @@ function renderDeductionsAll() {
   renderDeductionTable();
   renderMektupTable();
   renderAvansTable();
+  renderCariTable();
   renderTeminatHavuz();
   renderYansitmaTable();
   renderCezaTable();
@@ -7299,6 +7355,61 @@ function openAvansModal() {
   document.getElementById('avansModal').classList.add('active');
 }
 function closeAvansModal() { document.getElementById('avansModal').classList.remove('active'); }
+
+// TAŞERON / CARİ DURUMU — her yaprak kalem için avans/fatura/ödeme/borç
+function renderCariTable() {
+  const tbody = document.getElementById('cariTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  // Faturası veya avansı olan yaprak kalemleri topla
+  const leaves = getLeafBudgetItems().filter(b => {
+    return getInvoicesForBudgetItem(b).length > 0 || getBudgetItemAvansVerilenTry(b) > 0;
+  });
+  if (leaves.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Henüz avans veya hakediş girilmiş kalem yok</td></tr>';
+    return;
+  }
+  let tVer=0, tMah=0, tBak=0, tFat=0, tOde=0, tBorc=0;
+  leaves.forEach(b => {
+    const verilen = getBudgetItemAvansVerilenTry(b);
+    const mahsup = getBudgetItemAvansMahsupTry(b);
+    const bakiye = verilen - mahsup;
+    const faturalanan = getBudgetItemFaturalananTry(b);
+    const odenen = getBudgetItemOdenenTry(b);
+    // Ödenmemiş borç = faturalanan − (taksit ödemeleri + mahsup avans)
+    // = faturanın ödenmemiş net bakiyesi
+    let odenmemis = 0;
+    getInvoicesForBudgetItem(b).forEach(inv => {
+      const c = calcInvoiceTotals(inv);
+      odenmemis += (c.remaining || 0);
+    });
+    tVer+=verilen; tMah+=mahsup; tBak+=bakiye; tFat+=faturalanan; tOde+=odenen; tBorc+=odenmemis;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="mono">${b.code || '—'}</td>
+      <td>${escapeHtml(b.supplier || b.name || '—')}</td>
+      <td class="right">${verilen>0?fmtTL(verilen):'—'}</td>
+      <td class="right" style="color:#2f6b48;">${mahsup>0?fmtTL(mahsup):'—'}</td>
+      <td class="right" style="background:rgba(184,134,61,0.05);color:${bakiye>0.5?'var(--accent)':'var(--text-muted)'};font-weight:${bakiye>0.5?'600':'400'};">${bakiye>0.5?fmtTL(bakiye):'—'}</td>
+      <td class="right">${faturalanan>0?fmtTL(faturalanan):'—'}</td>
+      <td class="right" style="background:rgba(30,58,95,0.03);color:#1e3a5f;">${odenen>0.5?fmtTL(odenen):'—'}</td>
+      <td class="right" style="background:rgba(164,65,50,0.04);color:${odenmemis>0.5?'#a44132':'var(--text-muted)'};font-weight:${odenmemis>0.5?'600':'400'};">${odenmemis>0.5?fmtTL(odenmemis):'—'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  const tr = document.createElement('tr');
+  tr.style.cssText = 'font-weight:700;background:rgba(30,58,95,0.06);border-top:2px solid var(--border-strong);';
+  tr.innerHTML = `
+    <td colspan="2" style="font-weight:700;">TOPLAM</td>
+    <td class="right">${fmtTL(tVer)}</td>
+    <td class="right" style="color:#2f6b48;">${fmtTL(tMah)}</td>
+    <td class="right" style="background:rgba(184,134,61,0.05);color:var(--accent);">${fmtTL(tBak)}</td>
+    <td class="right">${fmtTL(tFat)}</td>
+    <td class="right" style="background:rgba(30,58,95,0.03);color:#1e3a5f;">${fmtTL(tOde)}</td>
+    <td class="right" style="background:rgba(164,65,50,0.04);color:#a44132;">${fmtTL(tBorc)}</td>
+  `;
+  tbody.appendChild(tr);
+}
 
 // Tarihe göre kur ipucu (boşsa otomatik doldur)
 function updateAvansFxHint() {
