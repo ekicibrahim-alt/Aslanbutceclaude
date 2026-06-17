@@ -1562,7 +1562,7 @@ body.view-mode .lock-status * {
           <button class="btn btn-primary" onclick="addDailyFx()">+ Kur Ekle</button>
           <button class="btn btn-ghost" onclick="document.getElementById('dailyFxCsvInput').click()">📤 CSV/Excel'den İçe Aktar</button>
           <input type="file" id="dailyFxCsvInput" style="display:none" accept=".csv,.xlsx,.xls,.txt" onchange="importDailyFx(event)">
-          <button class="btn btn-ghost" onclick="exportDailyFxTemplate()">📥 Şablon İndir</button>
+          <button class="btn btn-ghost" onclick="exportDailyFxTemplate()">📥 Excel İndir (mevcut/şablon)</button>
           <button class="btn btn-danger" onclick="clearDailyFx()" style="margin-left: auto;">Tümünü Sil</button>
         </div>
       </div>
@@ -2122,7 +2122,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v5.0 (16.06)';
+const APP_BUILD = 'v5.1 (17.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -6636,16 +6636,25 @@ async function clearDailyFx() {
 function exportDailyFxTemplate() {
   if (typeof XLSX === 'undefined') return;
   const wb = XLSX.utils.book_new();
-  const data = [
-    ['Tarih', 'USD/TRY'],
-    ['2026-01-15', 41.85],
-    ['2026-02-01', 42.10],
-    ['2026-03-01', 42.50]
-  ];
+  const mevcut = (state.settings.dailyFx || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+  let data;
+  if (mevcut.length > 0) {
+    // Mevcut kurları dışa aktar (düzenleyip geri yükleyebilsin)
+    data = [['Tarih', 'USD/TRY'], ...mevcut.map(d => [d.date, d.rate])];
+  } else {
+    // Hiç kur yoksa boş şablon (örnek satırlarla)
+    data = [
+      ['Tarih', 'USD/TRY'],
+      ['2026-01-15', 41.85],
+      ['2026-02-01', 42.10],
+      ['2026-03-01', 42.50]
+    ];
+  }
   const ws = XLSX.utils.aoa_to_sheet(data);
   ws['!cols'] = [{ wch: 14 }, { wch: 12 }];
   XLSX.utils.book_append_sheet(wb, ws, 'Günlük Kurlar');
-  XLSX.writeFile(wb, 'gunluk_kur_sablonu.xlsx');
+  const fileName = mevcut.length > 0 ? 'gunluk_kurlar.xlsx' : 'gunluk_kur_sablonu.xlsx';
+  XLSX.writeFile(wb, fileName);
 }
 
 // CSV/Excel'den günlük kurları içe aktar
