@@ -752,9 +752,10 @@ body.view-mode .lock-status * {
         <div class="value-secondary" id="kpi-budget-usd">—</div>
       </div>
       <div class="kpi-card highlight">
-        <div class="label">Gerçekleşme</div>
+        <div class="label">İş Gerçekleşmesi (net)</div>
         <div class="value" id="kpi-actual-try">—</div>
         <div class="value-secondary" id="kpi-actual-usd">—</div>
+        <div class="value-note" id="kpi-faturalanan-note" style="margin-top:4px;"></div>
       </div>
       <div class="kpi-card success">
         <div class="label">Tahsilat (Gerçek)</div>
@@ -771,33 +772,34 @@ body.view-mode .lock-status * {
     <!-- İlerleme KPI'lar -->
     <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr);">
       <div class="kpi-card">
-        <div class="label">Fiziksel İlerleme (Plan)</div>
+        <div class="label">Planlı İlerleme</div>
         <div class="value" id="kpi-progress-physical">—</div>
-        <div class="value-note" id="kpi-progress-physical-note">İş programı (USD bazlı)</div>
+        <div class="value-note" id="kpi-progress-physical-note">İş programından (plana dayalı)</div>
       </div>
       <div class="kpi-card highlight">
         <div class="label">Finansal İlerleme (USD)</div>
         <div class="value" id="kpi-progress-financial-usd">—</div>
-        <div class="value-note">Fatura USD / Bütçe USD</div>
+        <div class="value-note">İş gerçekleşmesi (net) / Bütçe</div>
       </div>
       <div class="kpi-card highlight">
         <div class="label">Finansal İlerleme (TL)</div>
         <div class="value" id="kpi-progress-financial-try">—</div>
-        <div class="value-note">Fatura TL / Bütçe TL (güncel kur)</div>
+        <div class="value-note">İş gerçekleşmesi (net) / Bütçe TL</div>
       </div>
       <div class="kpi-card" id="kpi-spi-card">
         <div class="label">Performans Endeksi (SPI)</div>
         <div class="value" id="kpi-spi">—</div>
-        <div class="value-note" id="kpi-spi-comment">—</div>
+        <div class="value-note" id="kpi-spi-comment">Zaman performansı</div>
       </div>
     </div>
 
     <!-- Tahmini bitiş -->
     <div class="kpi-grid" style="grid-template-columns: repeat(2, 1fr);">
       <div class="kpi-card">
-        <div class="label">Tahmini Bitiş Maliyeti (EAC)</div>
+        <div class="label">Tahmini Bitiş Maliyeti (plana dayalı)</div>
         <div class="value" id="kpi-eac-try">—</div>
         <div class="value-secondary" id="kpi-eac-usd">—</div>
+        <div class="value-note" id="kpi-eac-note" style="margin-top:4px;font-size:11px;">Planlı ilerleme ile karşılaştırılır — saha planın gerisindeyse gerçek maliyet daha yüksek olabilir</div>
       </div>
       <div class="kpi-card">
         <div class="label">Tahmini Bitiş Tarihi</div>
@@ -820,9 +822,10 @@ body.view-mode .lock-status * {
             <th>Kategori</th>
             <th class="right">Bütçe (TL)</th>
             <th class="right">Bütçe (USD)</th>
-            <th class="right">Gerçekleşme (TL)</th>
-            <th class="right">Gerçekleşme (USD)</th>
-            <th class="right">%</th>
+            <th class="right" title="Kesilen toplam hakediş (yansıtma/ceza düşülmemiş)">Faturalanan (TL)</th>
+            <th class="right" title="Yansıtma+ceza düşülmüş, bütçeye karşı gerçek iş">İş Gerç. (TL)</th>
+            <th class="right">İş Gerç. (USD)</th>
+            <th class="right" title="İş gerçekleşmesi / bütçe">%</th>
             <th class="right">Kalan (TL)</th>
           </tr>
         </thead>
@@ -2122,7 +2125,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v5.1 (17.06)';
+const APP_BUILD = 'v5.2 (17.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -4128,16 +4131,29 @@ function computeOverallProgress() {
     }
   });
   
-  // Gerçekleşen faturalar — hem USD hem TL ayrı hesapla
+  // Gerçekleşen faturalar — BRÜT (faturalanan) ve NET (iş gerçekleşmesi) ayrı
+  // Brüt = c.net (faturanın net tutarı, yansıtma/ceza düşülmemiş) → "Faturalanan/ciro"
+  // Net  = yansıtma + ceza düşülmüş → "İş Gerçekleşmesi" (bütçeye karşı gerçek iş)
+  let faturalananUsd = 0, faturalananTry = 0;  // brüt
   state.invoices.forEach(inv => {
     const invD = new Date(inv.date);
     if (invD > target) return;
     const c = calcInvoiceTotals(inv);
-    // Bütçe KDV hariç olduğu için gerçekleşme de NET (KDV/stopaj/tevkifat hariç)
-    totalActualTry += c.net;
+    faturalananTry += c.net;
     const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
-    totalActualUsd += c.net / invFx;
+    faturalananUsd += c.net / invFx;
   });
+  // NET iş gerçekleşmesi — kalem bazlı fonksiyonlardan (yansıtma+ceza düşülmüş)
+  let isGercUsd = 0, isGercTry = 0;
+  leaves.forEach(b => {
+    isGercUsd += getBudgetItemActualUsd(b);
+    isGercTry += getBudgetItemActualTry(b);
+  });
+  // totalActual* → NET (bütçe kıyaslaması, EAC, SPI için net kullanılır)
+  const totalActualUsd2 = isGercUsd;
+  const totalActualTry2 = isGercTry;
+  totalActualTry = totalActualTry2;
+  totalActualUsd = totalActualUsd2;
   
   // Toplam bütçe TL — ağırlıklı kur (her kalemin iş programına göre)
   const totalBudgetTry = leaves.reduce((sum, b) => sum + getBudgetItemTotalTry(b), 0);
@@ -4145,18 +4161,23 @@ function computeOverallProgress() {
   // EAC TL — USD EAC'ı ağırlıklı ortalama kur ile TL'ye çevir
   const avgFx = totalBudget > 0 ? totalBudgetTry / totalBudget : fx;
   
-  // USD bazlı finansal ilerleme
+  // Finansal ilerleme — NET iş gerçekleşmesi / bütçe
   const financialPctUsd = totalBudget > 0 ? (totalActualUsd / totalBudget) * 100 : 0;
-  // TL bazlı finansal ilerleme (ağırlıklı bütçe TL ile karşılaştır)
   const financialPctTry = totalBudgetTry > 0 ? (totalActualTry / totalBudgetTry) * 100 : 0;
   const financialPct = financialPctUsd;
   const totalActual = totalActualUsd;
   
+  // Planlı ilerleme (iş programından — "fiziksel" değil, plana dayalı)
   const physicalPct = totalBudget > 0 ? (totalPlanned / totalBudget) * 100 : 0;
   
+  // CPI = Kazanılan Değer (planlı ilerleme değeri) / Gerçek Maliyet (net iş gerçekleşmesi)
+  // EAC = Bütçe / CPI. SPI (zaman) değil CPI (maliyet) kullanılır.
+  // Planlı ilerleme faturalanandan önde → CPI>1 → EAC<bütçe (iyi)
+  const cpi = (totalActualUsd > 0 && totalPlanned > 0) ? (totalPlanned / totalActualUsd) : null;
+  // SPI ayrıca raporlanır (zaman performansı) ama EAC'de kullanılmaz
   const spi = totalPlanned > 0 ? (totalActualUsd / totalPlanned) : null;
-  const eac = (spi && spi > 0) ? (totalBudget / spi) : totalBudget;
-  const eacTry = eac * avgFx; // EAC TL = EAC USD × ağırlıklı ortalama kur
+  const eac = (cpi && cpi > 0) ? (totalBudget / cpi) : totalBudget;
+  const eacTry = eac * avgFx;
   
   // Proje bitiş tarihi tahmini
   let etaDate = null;
@@ -4167,7 +4188,6 @@ function computeOverallProgress() {
       if (p && p.start && (!minStart || p.start < minStart)) minStart = p.start;
     });
     if (minStart) {
-      // Format: YYYY-MM-DD (gün bazlı) veya YYYY-MM (eski ay bazlı)
       const startStr = minStart.length === 7 ? minStart + '-01' : minStart;
       const startD = new Date(startStr);
       const elapsedMs = target - startD;
@@ -4182,44 +4202,48 @@ function computeOverallProgress() {
     totalBudget, totalBudgetTry,
     totalPlanned,
     totalActual, totalActualUsd, totalActualTry,
+    faturalananUsd, faturalananTry,
     physicalPct,
     financialPct, financialPctUsd, financialPctTry,
-    spi, eac, eacTry, avgFx, etaDate
+    cpi, spi, eac, eacTry, avgFx, etaDate
   };
 }
 
 // Kategori bazlı bütçe & gerçekleşme (kullanıcı tanımlı kategoriler)
 function computeCategoryBreakdown() {
-  // Dinamik kategori listesi + 'mixed' (karma/atanmamış)
   const categories = {};
   state.settings.categories.forEach(c => {
-    categories[c.key] = { budgetUsd: 0, actualUsd: 0, actualTry: 0, label: c.label, color: c.color };
+    categories[c.key] = { budgetUsd: 0, budgetTry: 0, actualUsd: 0, actualTry: 0, faturalananUsd: 0, faturalananTry: 0, label: c.label, color: c.color };
   });
-  categories.mixed = { budgetUsd: 0, actualUsd: 0, actualTry: 0, label: 'Karma / Atanmamış', color: 'rgba(106, 101, 92, 0.6)' };
+  categories.mixed = { budgetUsd: 0, budgetTry: 0, actualUsd: 0, actualTry: 0, faturalananUsd: 0, faturalananTry: 0, label: 'Karma / Atanmamış', color: 'rgba(106, 101, 92, 0.6)' };
   
   const leaves = getLeafBudgetItems();
   leaves.forEach(b => {
     const usd = getBudgetItemTotalUsd(b);
+    const tryv = getBudgetItemTotalTry(b);  // baz bütçe, kalemin kuruyla (güncel kur değil)
     const cat = b.materialType || 'mixed';
-    if (categories[cat]) categories[cat].budgetUsd += usd;
-    else categories.mixed.budgetUsd += usd;
+    const target = categories[cat] || categories.mixed;
+    target.budgetUsd += usd;
+    target.budgetTry += tryv;
+    // NET iş gerçekleşmesi (yansıtma+ceza düşülmüş) — kalem bazlı
+    target.actualUsd += getBudgetItemActualUsd(b);
+    target.actualTry += getBudgetItemActualTry(b);
   });
   
+  // BRÜT faturalanan — fatura bazlı (kategoriye göre)
   const target = getTargetDate();
+  const fx = getCurrentFx();
   state.invoices.forEach(inv => {
     const invD = new Date(inv.date);
     if (invD > target) return;
     const c = calcInvoiceTotals(inv);
-    const amtTry = c.net;  // bütçe KDV hariç → karşılaştırma net olmalı
-    const amtUsd = inv.fxRate > 0 ? amtTry / inv.fxRate : 0;
+    const amtTry = c.net;
+    const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
+    const amtUsd = amtTry / invFx;
     const cat = inv.type || 'mixed';
-    if (categories[cat]) {
-      categories[cat].actualTry += amtTry;
-      categories[cat].actualUsd += amtUsd;
-    } else {
-      categories.mixed.actualTry += amtTry;
-      categories.mixed.actualUsd += amtUsd;
-    }
+    const tgt = categories[cat] || categories.mixed;
+    tgt.faturalananTry += amtTry;
+    tgt.faturalananUsd += amtUsd;
   });
   
   return categories;
@@ -4391,6 +4415,11 @@ function renderKpis() {
   document.getElementById('kpi-budget-usd').textContent = fmtUSD(overall.totalBudget);
   document.getElementById('kpi-actual-try').textContent = fmtTL(totalActualTry);
   document.getElementById('kpi-actual-usd').textContent = fmtUSD(overall.totalActualUsd || overall.totalActual);
+  const fatNote = document.getElementById('kpi-faturalanan-note');
+  if (fatNote) {
+    const fatTry = overall.faturalananTry || 0;
+    fatNote.textContent = fatTry > 0 ? `Faturalanan (brüt): ${fmtTL(fatTry)}` : '';
+  }
   document.getElementById('kpi-collected-try').textContent = fmtTL(collectedActual);
   document.getElementById('kpi-collected-usd').textContent = fmtUSD(collectedActualUsd);
   document.getElementById('kpi-peak-try').textContent = fmtTL(peak);
@@ -4498,40 +4527,47 @@ function renderCategoryBreakdown() {
   const cats = computeCategoryBreakdown();
   const fx = getCurrentFx();
   
-  let totalBudget = 0, totalActualTry = 0, totalActualUsd = 0;
+  let totalBudgetUsd = 0, totalBudgetTry = 0, totalActualTry = 0, totalActualUsd = 0, totalFatTry = 0;
   Object.keys(cats).forEach(key => {
     const c = cats[key];
-    if (c.budgetUsd === 0 && c.actualTry === 0) return;
-    totalBudget += c.budgetUsd;
+    if (c.budgetUsd === 0 && c.actualTry === 0 && c.faturalananTry === 0) return;
+    totalBudgetUsd += c.budgetUsd;
+    totalBudgetTry += c.budgetTry;
     totalActualTry += c.actualTry;
     totalActualUsd += c.actualUsd;
+    totalFatTry += c.faturalananTry;
     const pct = c.budgetUsd > 0 ? (c.actualUsd / c.budgetUsd) * 100 : 0;
-    const remaining = (c.budgetUsd - c.actualUsd) * fx;
+    // Kalan = baz bütçe TL − iş gerçekleşmesi TL
+    const remainingTry = c.budgetTry - c.actualTry;
+    const remainingUsd = c.budgetUsd - c.actualUsd;
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><span style="display:inline-block; width:10px; height:10px; background:${c.color}; border-radius:50%; margin-right:6px; vertical-align:middle;"></span><strong>${c.label}</strong></td>
-      <td class="right">${fmtTL(c.budgetUsd * fx)}</td>
+      <td class="right">${fmtTL(c.budgetTry)}</td>
       <td class="right">${fmtUSD(c.budgetUsd)}</td>
+      <td class="right" style="color:var(--text-muted);">${c.faturalananTry > 0 ? fmtTL(c.faturalananTry) : '—'}</td>
       <td class="right">${fmtTL(c.actualTry)}</td>
       <td class="right">${fmtUSD(c.actualUsd)}</td>
       <td class="right">${fmtNum(pct, 1)}%</td>
-      <td class="right">${fmtTL(remaining)}<br><span style="font-size: 11px; color: var(--text-muted);">${fmtUSD(remaining / fx)}</span></td>
+      <td class="right">${fmtTL(remainingTry)}<br><span style="font-size: 11px; color: var(--text-muted);">${fmtUSD(remainingUsd)}</span></td>
     `;
     tbody.appendChild(tr);
   });
   // Toplam
   const tr = document.createElement('tr');
   tr.className = 'level-1';
-  const totalPct = totalBudget > 0 ? (totalActualUsd / totalBudget) * 100 : 0;
-  const totalRemaining = (totalBudget - totalActualUsd) * fx;
+  const totalPct = totalBudgetUsd > 0 ? (totalActualUsd / totalBudgetUsd) * 100 : 0;
+  const totalRemainingTry = totalBudgetTry - totalActualTry;
+  const totalRemainingUsd = totalBudgetUsd - totalActualUsd;
   tr.innerHTML = `
     <td><strong>TOPLAM</strong></td>
-    <td class="right">${fmtTL(totalBudget * fx)}</td>
-    <td class="right">${fmtUSD(totalBudget)}</td>
+    <td class="right">${fmtTL(totalBudgetTry)}</td>
+    <td class="right">${fmtUSD(totalBudgetUsd)}</td>
+    <td class="right" style="color:var(--text-muted);">${totalFatTry > 0 ? fmtTL(totalFatTry) : '—'}</td>
     <td class="right">${fmtTL(totalActualTry)}</td>
     <td class="right">${fmtUSD(totalActualUsd)}</td>
     <td class="right">${fmtNum(totalPct, 1)}%</td>
-    <td class="right">${fmtTL(totalRemaining)}<br><span style="font-size: 11px; color: var(--text-muted);">${fmtUSD(totalBudget - totalActualUsd)}</span></td>
+    <td class="right">${fmtTL(totalRemainingTry)}<br><span style="font-size: 11px; color: var(--text-muted);">${fmtUSD(totalRemainingUsd)}</span></td>
   `;
   tbody.appendChild(tr);
 }
