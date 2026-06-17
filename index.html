@@ -1148,10 +1148,14 @@ body.view-mode .lock-status * {
     <div class="section">
       <div class="section-header">
         <h2 class="section-title">📋 Taşeron / Cari Durumu</h2>
-        <span style="font-size:12px;color:var(--text-muted);">Her kalem için: verilen avans, faturalanan iş, ödenen, taşeronda duran avans ve ödenmemiş borç</span>
+        <div class="section-actions">
+          <button class="btn btn-ghost view-allowed" style="font-size:12px;" onclick="exportCariDurumu()">📥 Tüm Cari (Excel)</button>
+          <button class="btn btn-ghost view-allowed" style="font-size:12px;" onclick="exportOdemeListesi()">💸 Ödenecekler Listesi</button>
+        </div>
       </div>
+      <span style="font-size:12px;color:var(--text-muted);display:block;margin:-8px 0 12px;">Her kalem için: verilen avans, faturalanan iş, ödenen, taşeronda duran avans ve ödenmemiş borç</span>
       <div class="table-filter-wrap">
-        <input class="table-filter-input" type="text" placeholder="Filtrele... (tedarikçi, hesap kodu)" oninput="filterTable('cariTableBody', this.value, this)" id="filter-cari">
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (boşlukla çoklu: zet 150.02)" oninput="filterTable('cariTableBody', this.value, this)" id="filter-cari">
         <span class="table-filter-count" id="filter-cari-count"></span>
         <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-cari','cariTableBody','filter-cari-count')">Temizle</button>
       </div>
@@ -1210,7 +1214,7 @@ body.view-mode .lock-status * {
         <span style="font-size:12px;color:var(--text-muted);">Taşeron kalemlerinden düşülen, 3. tarafa yansıyan kesintiler</span>
       </div>
       <div class="table-filter-wrap">
-        <input class="table-filter-input" type="text" placeholder="Filtrele... (tedarikçi, hesap kodu, açıklama)" oninput="filterTable('yansitmaTableBody', this.value, this)" id="filter-yansitma">
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (boşlukla çoklu: zet yemek)" oninput="filterTable('yansitmaTableBody', this.value, this)" id="filter-yansitma">
         <span class="table-filter-count" id="filter-yansitma-count"></span>
         <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-yansitma','yansitmaTableBody','filter-yansitma-count')">Temizle</button>
       </div>
@@ -1237,7 +1241,7 @@ body.view-mode .lock-status * {
         <span style="font-size:12px;color:var(--text-muted);">Taşerona ödenmeyen, tasarruf yaratan kesintiler (gecikme cezası vb)</span>
       </div>
       <div class="table-filter-wrap">
-        <input class="table-filter-input" type="text" placeholder="Filtrele... (tedarikçi, hesap kodu, açıklama)" oninput="filterTable('cezaTableBody', this.value, this)" id="filter-ceza">
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (boşlukla çoklu: zet ceza)" oninput="filterTable('cezaTableBody', this.value, this)" id="filter-ceza">
         <span class="table-filter-count" id="filter-ceza-count"></span>
         <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-ceza','cezaTableBody','filter-ceza-count')">Temizle</button>
       </div>
@@ -2125,7 +2129,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v5.2 (17.06)';
+const APP_BUILD = 'v5.3 (17.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -5478,7 +5482,10 @@ function refreshCategoryDropdowns() {
 function filterTable(tbodyId, q, inputEl) {
   const tbody = document.getElementById(tbodyId);
   if (!tbody) return;
-  const term = q.trim().toLowerCase();
+  const raw = q.trim().toLowerCase();
+  // Çoklu filtre: boşlukla ayrılmış her terim ayrı kriter (VE mantığı)
+  // "zet yemek" → hem "zet" hem "yemek" geçen satırlar
+  const terms = raw.split(/\s+/).filter(t => t.length > 0);
   let visible = 0, total = 0;
 
   // Önceki ara toplam satırını temizle
@@ -5492,13 +5499,15 @@ function filterTable(tbodyId, q, inputEl) {
       return;
     }
     total++;
-    if (!term) {
+    if (terms.length === 0) {
       tr.classList.remove('row-hidden');
       visible++;
       return;
     }
     const rowText = Array.from(tr.cells).map(td => td.textContent).join(' ').toLowerCase();
-    if (rowText.includes(term)) {
+    // Tüm terimler eşleşmeli (VE)
+    const matchesAll = terms.every(t => rowText.includes(t));
+    if (matchesAll) {
       tr.classList.remove('row-hidden');
       visible++;
       visibleRows.push(tr);
@@ -5511,11 +5520,11 @@ function filterTable(tbodyId, q, inputEl) {
   const countId = inputEl ? inputEl.id + '-count' : null;
   if (countId) {
     const countEl = document.getElementById(countId);
-    if (countEl) countEl.textContent = term ? `${visible} / ${total} kayıt` : (total > 0 ? `${total} kayıt` : '');
+    if (countEl) countEl.textContent = terms.length > 0 ? `${visible} / ${total} kayıt` : (total > 0 ? `${total} kayıt` : '');
   }
 
   // Filtre aktifse: görünen satırların sayısal sütunlarını topla → ara toplam satırı
-  if (term && visibleRows.length > 0) {
+  if (terms.length > 0 && visibleRows.length > 0) {
     const colCount = visibleRows[0].cells.length;
     const sums = new Array(colCount).fill(null); // null = sayısal değil
     visibleRows.forEach(tr => {
@@ -7407,6 +7416,70 @@ function openAvansModal() {
 function closeAvansModal() { document.getElementById('avansModal').classList.remove('active'); }
 
 // TAŞERON / CARİ DURUMU — her yaprak kalem için avans/fatura/ödeme/borç
+// Cari durumu verisini topla (tablo + export ortak kullanır)
+function getCariDurumuData() {
+  const leaves = getLeafBudgetItems().filter(b => {
+    return getInvoicesForBudgetItem(b).length > 0 || getBudgetItemAvansVerilenTry(b) > 0;
+  });
+  return leaves.map(b => {
+    const verilen = getBudgetItemAvansVerilenTry(b);
+    const mahsup = getBudgetItemAvansMahsupTry(b);
+    const bakiye = verilen - mahsup;
+    const faturalanan = getBudgetItemFaturalananTry(b);
+    const odenen = getBudgetItemOdenenTry(b);
+    let odenmemis = 0;
+    getInvoicesForBudgetItem(b).forEach(inv => {
+      odenmemis += (calcInvoiceTotals(inv).remaining || 0);
+    });
+    return {
+      code: b.code || '', supplier: b.supplier || b.name || '',
+      verilen, mahsup, bakiye, faturalanan, odenen, odenmemis
+    };
+  });
+}
+
+// Tüm cari durumu → Excel
+function exportCariDurumu() {
+  if (typeof XLSX === 'undefined') { alert('Excel kütüphanesi yüklenemedi'); return; }
+  const data = getCariDurumuData();
+  if (data.length === 0) { alert('Cari durumu verisi yok'); return; }
+  const rows = [['Hesap Kodu', 'Tedarikçi', 'Verilen Avans', 'Mahsup', 'Avans Bakiyesi', 'Faturalanan', 'Ödenen', 'Ödenmemiş Borç']];
+  data.forEach(d => rows.push([d.code, d.supplier, d.verilen, d.mahsup, d.bakiye, d.faturalanan, d.odenen, d.odenmemis]));
+  // Toplam
+  const t = data.reduce((a, d) => ({ v: a.v+d.verilen, m: a.m+d.mahsup, b: a.b+d.bakiye, f: a.f+d.faturalanan, o: a.o+d.odenen, ob: a.ob+d.odenmemis }), {v:0,m:0,b:0,f:0,o:0,ob:0});
+  rows.push(['TOPLAM', '', t.v, t.m, t.b, t.f, t.o, t.ob]);
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:18},{wch:22},{wch:14},{wch:12},{wch:14},{wch:14},{wch:14},{wch:16}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Cari Durumu');
+  const proj = (state.settings.projectName || 'proje').replace(/[^a-z0-9]/gi, '_');
+  XLSX.writeFile(wb, `cari_durumu_${proj}.xlsx`);
+}
+
+// Ödenecekler listesi → Excel (sadece borçlular, borca göre büyükten küçüğe)
+function exportOdemeListesi() {
+  if (typeof XLSX === 'undefined') { alert('Excel kütüphanesi yüklenemedi'); return; }
+  const data = getCariDurumuData()
+    .filter(d => d.odenmemis > 0.5)
+    .sort((a, b) => b.odenmemis - a.odenmemis);
+  if (data.length === 0) { alert('Ödenmemiş borcu olan kalem yok'); return; }
+  const rows = [['Sıra', 'Tedarikçi', 'Hesap Kodu', 'Ödenmemiş Borç (TL)', 'Avans Bakiyesi (TL)', 'Net Ödenecek (Borç − Avans)']];
+  let i = 1, toplamBorc = 0, toplamNet = 0;
+  data.forEach(d => {
+    // Net ödenecek = borç − taşeronda duran avans (avans borçtan mahsup edilebilir)
+    const net = Math.max(0, d.odenmemis - d.bakiye);
+    toplamBorc += d.odenmemis; toplamNet += net;
+    rows.push([i++, d.supplier, d.code, d.odenmemis, d.bakiye, net]);
+  });
+  rows.push(['', 'TOPLAM', '', toplamBorc, '', toplamNet]);
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:6},{wch:24},{wch:18},{wch:18},{wch:18},{wch:22}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Ödenecekler');
+  const proj = (state.settings.projectName || 'proje').replace(/[^a-z0-9]/gi, '_');
+  XLSX.writeFile(wb, `odeme_listesi_${proj}.xlsx`);
+}
+
 function renderCariTable() {
   const tbody = document.getElementById('cariTableBody');
   if (!tbody) return;
@@ -7737,7 +7810,7 @@ function renderYansitmaTable() {
       <td>${escapeHtml(inv.supplier || '—')}</td>
       <td class="mono">${inv.code || '—'}</td>
       <td class="mono">${inv.invoiceNo || '—'}</td>
-      <td class="center">${fmtDate(inv.date)}</td>
+      <td class="center">${fmtDate(inv.date)}<span style="display:none">${(inv.date||'').substring(0,7)}</span></td>
       <td>${escapeHtml(k.label || '—')}</td>
       <td class="right" style="font-weight:600;color:var(--accent);">${fmtTL(k.tutar || 0)}</td>
     `;
@@ -7771,7 +7844,7 @@ function renderCezaTable() {
       <td>${escapeHtml(inv.supplier || '—')}</td>
       <td class="mono">${inv.code || '—'}</td>
       <td class="mono">${inv.invoiceNo || '—'}</td>
-      <td class="center">${fmtDate(inv.date)}</td>
+      <td class="center">${fmtDate(inv.date)}<span style="display:none">${(inv.date||'').substring(0,7)}</span></td>
       <td>${escapeHtml(k.label || '—')}</td>
       <td class="right" style="font-weight:600;color:#a44132;">${fmtTL(k.tutar || 0)}</td>
     `;
