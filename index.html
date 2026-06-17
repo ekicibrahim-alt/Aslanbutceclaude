@@ -968,7 +968,7 @@ body.view-mode .lock-status * {
               <th class="right kdv-col" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(47,107,72,0.05);">Gerç. KDV Dahil</th>
               <th class="right" rowspan="2" style="background: rgba(184,134,61,0.08);" title="Bu kalemden 3. tarafa (yemekçi, İSG vb) yansıtılan tutar — bu kalemde harcanmış sayılır">Yansıtılan<br><span style="font-size:9px;color:var(--text-muted);">TL</span></th>
               <th class="right" colspan="2" style="border-bottom: 1px solid var(--border); background:rgba(30,58,95,0.04);" title="Fiilen ödenen nakit — avans (peşin) + fatura ödemeleri">Ödenen (Nakit)</th>
-              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border); background:rgba(30,58,95,0.07);" title="Revize − Ödenen = daha çıkacak para">Kalan Ödeme</th>
+              <th class="right" colspan="2" style="border-bottom: 1px solid var(--border); background:rgba(30,58,95,0.07);" title="Revize − Ödenen − Avans Bakiyesi = gerçek nakit ihtiyacı (eksi = avans fazlası, yeni ödeme yok)">Kalan Ödeme</th>
               <th class="right" colspan="2" style="border-bottom: 1px solid var(--border);" title="Baz/Revize − İş Gerçekleşmesi − Yansıtılan (bütçe sapması)">Gerçek Kalan</th>
               <th class="right kdv-col" colspan="2" style="border-bottom: 1px solid var(--border); background: rgba(47,107,72,0.05);">Kalan KDV Dahil</th>
               <th class="center" rowspan="2">Durum</th>
@@ -2122,7 +2122,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v4.9 (16.06)';
+const APP_BUILD = 'v5.0 (16.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -3772,21 +3772,22 @@ function getBudgetItemAvansBakiyeUsd(b) {
   return getBudgetItemAvansVerilenUsd(b) - getBudgetItemAvansMahsupUsd(b);
 }
 
-// ÖDENEN (işe fiilen mal olan) TL = MAHSUP EDİLEN avans + fatura taksit ödemeleri
-// (verilen avansın tamamı değil — mahsup edilmemiş kısım "avans bakiyesi" olarak ayrı durur)
+// ÖDENEN (bu kaleme/faturaya fiilen ödenen nakit) = fatura taksit ödemeleri
+// Mahsup avans dahil DEĞİL — o para avans verilince zaten çıktı (çift sayım önleme).
+// Avans Cari Durumu'nda ayrı (verilen/mahsup/bakiye) durur.
 function getBudgetItemOdenenTry(b) {
   if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemOdenenTry(leaf), 0);
-  let sum = getBudgetItemAvansMahsupTry(b);
+  let sum = 0;
   getInvoicesForBudgetItem(b).forEach(inv => {
     const c = calcInvoiceTotals(inv);
-    sum += (c.totalPaid || 0); // taksitlerde fiilen ödenen (avans üstü kısım)
+    sum += (c.totalPaid || 0); // sadece taksitlerde fiilen ödenen
   });
   return sum;
 }
 function getBudgetItemOdenenUsd(b) {
   if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemOdenenUsd(leaf), 0);
   const fx = getBudgetItemFx(b);
-  let sum = getBudgetItemAvansMahsupUsd(b);
+  let sum = 0;
   getInvoicesForBudgetItem(b).forEach(inv => {
     const c = calcInvoiceTotals(inv);
     const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
@@ -4648,7 +4649,7 @@ function renderBudgetTable() {
   let totalKdvUsd=0, totalKdvTry=0, totalGrossUsd=0, totalGrossTry=0;
   let totalActGrossUsd=0, totalActGrossTry=0, totalRevGrossUsd=0;
   let totalYansUsd=0, totalYansTry=0;
-  let totalOdenenUsd=0, totalOdenenTry=0;
+  let totalOdenenUsd=0, totalOdenenTry=0, totalAvansBakUsd=0, totalAvansBakTry=0;
 
   sorted.forEach(b => {
     const isLeaf = isBudgetLeaf(b);
@@ -4675,12 +4676,15 @@ function renderBudgetTable() {
     // Gerçek Kalan = Baz − Gerçekleşme − Yansıtılan (Seçenek A)
     const remUsd  = effUsd - actUsd - yansUsd;
     const remTry  = effTry - actTry - yansTry;
-    // Ödenen (nakit) = avans + fatura ödemeleri
+    // Ödenen (nakit) = sadece fatura taksit ödemeleri
     const odenenUsd = getBudgetItemOdenenUsd(b);
     const odenenTry = getBudgetItemOdenenTry(b);
-    // Kalan Ödeme = Revize − Ödenen (daha çıkacak para)
-    const kalanOdemeUsd = effUsd - odenenUsd;
-    const kalanOdemeTry = effTry - odenenTry;
+    // Avans bakiyesi (taşeronda duran, gelecek işi karşılar)
+    const avansBakUsd = getBudgetItemAvansBakiyeUsd(b);
+    const avansBakTry = getBudgetItemAvansBakiyeTry(b);
+    // Kalan Ödeme = Revize − Ödenen − Avans Bakiyesi (gerçek nakit ihtiyacı; eksi = avans fazlası)
+    const kalanOdemeUsd = effUsd - odenenUsd - avansBakUsd;
+    const kalanOdemeTry = effTry - odenenTry - avansBakTry;
 
     if (isRootBudgetItem(b)) {
       totalBaseUsd += baseUsd; totalBaseTry += baseTry;
@@ -4690,6 +4694,7 @@ function renderBudgetTable() {
       totalRemUsd += remUsd; totalRemTry += remTry;
       totalYansUsd += yansUsd; totalYansTry += yansTry;
       totalOdenenUsd += odenenUsd; totalOdenenTry += odenenTry;
+      totalAvansBakUsd += avansBakUsd; totalAvansBakTry += avansBakTry;
       totalKdvUsd += kdvUsd; totalKdvTry += kdvTry;
       totalGrossUsd += grossUsd; totalGrossTry += grossTry;
       totalActGrossUsd += getBudgetItemActualGrossUsd(b);
@@ -4767,8 +4772,8 @@ function renderBudgetTable() {
       <td class="right" style="background:rgba(184,134,61,0.06);color:${yansTry>0?'var(--accent)':'var(--text-muted)'};">${yansTry>0?fmtTL(yansTry):'—'}</td>
       <td class="right" style="background:rgba(30,58,95,0.03);color:#1e3a5f;">${odenenUsd>0.5?fmtUSD(odenenUsd):'—'}</td>
       <td class="right" style="background:rgba(30,58,95,0.03);color:#1e3a5f;">${odenenTry>0.5?fmtTL(odenenTry):'—'}</td>
-      <td class="right" style="background:rgba(30,58,95,0.06);color:#1e3a5f;font-weight:600;">${fmtUSD(kalanOdemeUsd)}</td>
-      <td class="right" style="background:rgba(30,58,95,0.06);color:#1e3a5f;font-weight:600;">${fmtTL(kalanOdemeTry)}</td>
+      <td class="right" style="background:rgba(30,58,95,0.06);color:${kalanOdemeTry<-0.5?'#2f6b48':'#1e3a5f'};font-weight:600;" title="${kalanOdemeTry<-0.5?'Avans fazlası — yeni nakit ödeme yok':'Daha çıkacak nakit'}">${fmtUSD(kalanOdemeUsd)}</td>
+      <td class="right" style="background:rgba(30,58,95,0.06);color:${kalanOdemeTry<-0.5?'#2f6b48':'#1e3a5f'};font-weight:600;">${fmtTL(kalanOdemeTry)}</td>
       <td class="right" style="${remColor}">${fmtUSD(remUsd)}</td>
       <td class="right" style="${remColor}">${fmtTL(remTry)}</td>
       <td class="right kdv-col" style="background:rgba(47,107,72,0.04);color:#2f6b48;">${fmtUSD(remGrossUsd)}</td>
@@ -4790,8 +4795,8 @@ function renderBudgetTable() {
     const totRemGrossUsd = totRevGross - totalActGrossUsd - totalYansUsd;
     const totRemGrossTry = (totRevGross * fx) - totalActGrossTry - totalYansTry;
     // Kalan Ödeme = Revize − Ödenen
-    const totKalanOdemeUsd = (hasAnyRevise ? totalRevUsd : totalBaseUsd) - totalOdenenUsd;
-    const totKalanOdemeTry = (hasAnyRevise ? totalRevTry : totalBaseTry) - totalOdenenTry;
+    const totKalanOdemeUsd = (hasAnyRevise ? totalRevUsd : totalBaseUsd) - totalOdenenUsd - totalAvansBakUsd;
+    const totKalanOdemeTry = (hasAnyRevise ? totalRevTry : totalBaseTry) - totalOdenenTry - totalAvansBakTry;
     const tr = document.createElement('tr');
     tr.style.cssText = 'font-weight:700;background:rgba(30,58,95,0.06);border-bottom:2px solid var(--border-strong);';
     tr.innerHTML = `
