@@ -1153,7 +1153,7 @@ body.view-mode .lock-status * {
           <button class="btn btn-ghost view-allowed" style="font-size:12px;" onclick="exportOdemeListesi()">💸 Ödenecekler Listesi</button>
         </div>
       </div>
-      <span style="font-size:12px;color:var(--text-muted);display:block;margin:-8px 0 12px;">Her kalem için: verilen avans, faturalanan iş, ödenen, taşeronda duran avans ve ödenmemiş borç</span>
+      <span style="font-size:12px;color:var(--text-muted);display:block;margin:-8px 0 12px;">Faturalanan − Kesinti = Net Ödenecek · Net Ödenecek − Ödenen = Ödenmemiş Borç · Avans ayrı takip edilir</span>
       <div class="table-filter-wrap">
         <input class="table-filter-input" type="text" placeholder="Filtrele... (boşlukla çoklu: zet 150.02)" oninput="filterTable('cariTableBody', this.value, this)" id="filter-cari">
         <span class="table-filter-count" id="filter-cari-count"></span>
@@ -1163,14 +1163,21 @@ body.view-mode .lock-status * {
         <table class="data-table">
           <thead>
             <tr>
-              <th>Hesap Kodu</th>
-              <th>Tedarikçi</th>
-              <th class="right" title="Toplam verilen avans">Verilen Avans</th>
-              <th class="right" title="Avansın işe dönüşmüş (mahsup) kısmı">Mahsup</th>
-              <th class="right" style="background:rgba(184,134,61,0.06);" title="Taşeronda duran, henüz mahsup edilmemiş avans (alacağın)">Avans Bakiyesi</th>
-              <th class="right" title="Kesilen toplam hakediş (KDV dahil)">Faturalanan</th>
-              <th class="right" style="background:rgba(30,58,95,0.04);" title="Mahsup avans + fatura taksit ödemeleri">Ödenen</th>
-              <th class="right" style="background:rgba(164,65,50,0.05);" title="Faturalandı ama ödenmedi (taşerona borcun)">Ödenmemiş Borç</th>
+              <th rowspan="2" style="vertical-align:bottom;">Hesap Kodu</th>
+              <th rowspan="2" style="vertical-align:bottom;">Tedarikçi</th>
+              <th class="right" colspan="3" style="border-bottom:1px solid var(--border);background:rgba(184,134,61,0.04);">AVANS</th>
+              <th class="right" colspan="3" style="border-bottom:1px solid var(--border);background:rgba(30,58,95,0.03);">HAKEDİŞ → NET ÖDENECEK</th>
+              <th class="right" colspan="2" style="border-bottom:1px solid var(--border);">ÖDEME DURUMU</th>
+            </tr>
+            <tr>
+              <th class="right" style="font-size:10px;" title="Toplam verilen avans">Verilen</th>
+              <th class="right" style="font-size:10px;" title="Avansın işe dönüşmüş (mahsup) kısmı">Mahsup</th>
+              <th class="right" style="font-size:10px;background:rgba(184,134,61,0.06);" title="Taşeronda duran, henüz mahsup edilmemiş avans (alacağın)">Bakiye</th>
+              <th class="right" style="font-size:10px;" title="Kesilen toplam hakediş, KDV dahil brüt">Faturalanan</th>
+              <th class="right" style="font-size:10px;color:#a44132;" title="Stopaj, tevkifat, teminat, avans mahsubu, yansıtma, ceza — tüm kesintiler">− Kesinti</th>
+              <th class="right" style="font-size:10px;background:rgba(30,58,95,0.05);font-weight:700;" title="Faturalanan − Kesinti = taşerona fiilen ödenecek">= Net Ödenecek</th>
+              <th class="right" style="font-size:10px;background:rgba(30,58,95,0.04);" title="Net ödenecekten fiilen ödenen taksitler">Ödenen</th>
+              <th class="right" style="font-size:10px;background:rgba(164,65,50,0.05);" title="Net Ödenecek − Ödenen = kalan borç">Ödenmemiş Borç</th>
             </tr>
           </thead>
           <tbody id="cariTableBody"></tbody>
@@ -2129,7 +2136,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v5.3 (17.06)';
+const APP_BUILD = 'v5.4 (17.06)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -7425,15 +7432,18 @@ function getCariDurumuData() {
     const verilen = getBudgetItemAvansVerilenTry(b);
     const mahsup = getBudgetItemAvansMahsupTry(b);
     const bakiye = verilen - mahsup;
-    const faturalanan = getBudgetItemFaturalananTry(b);
+    const faturalanan = getBudgetItemFaturalananTry(b);  // brüt (grandTotal toplamı)
     const odenen = getBudgetItemOdenenTry(b);
-    let odenmemis = 0;
+    let odenmemis = 0, kesinti = 0, netOdenecek = 0;
     getInvoicesForBudgetItem(b).forEach(inv => {
-      odenmemis += (calcInvoiceTotals(inv).remaining || 0);
+      const c = calcInvoiceTotals(inv);
+      odenmemis += (c.remaining || 0);
+      kesinti += (c.kesToplam || 0);       // tüm kesintiler (avans/teminat/yansıtma/ceza)
+      netOdenecek += (c.netOdenecek || 0); // faturalanan − kesinti
     });
     return {
       code: b.code || '', supplier: b.supplier || b.name || '',
-      verilen, mahsup, bakiye, faturalanan, odenen, odenmemis
+      verilen, mahsup, bakiye, faturalanan, kesinti, netOdenecek, odenen, odenmemis
     };
   });
 }
@@ -7443,13 +7453,13 @@ function exportCariDurumu() {
   if (typeof XLSX === 'undefined') { alert('Excel kütüphanesi yüklenemedi'); return; }
   const data = getCariDurumuData();
   if (data.length === 0) { alert('Cari durumu verisi yok'); return; }
-  const rows = [['Hesap Kodu', 'Tedarikçi', 'Verilen Avans', 'Mahsup', 'Avans Bakiyesi', 'Faturalanan', 'Ödenen', 'Ödenmemiş Borç']];
-  data.forEach(d => rows.push([d.code, d.supplier, d.verilen, d.mahsup, d.bakiye, d.faturalanan, d.odenen, d.odenmemis]));
+  const rows = [['Hesap Kodu', 'Tedarikçi', 'Verilen Avans', 'Mahsup', 'Avans Bakiyesi', 'Faturalanan (brüt)', 'Kesinti', 'Net Ödenecek', 'Ödenen', 'Ödenmemiş Borç']];
+  data.forEach(d => rows.push([d.code, d.supplier, d.verilen, d.mahsup, d.bakiye, d.faturalanan, d.kesinti, d.netOdenecek, d.odenen, d.odenmemis]));
   // Toplam
-  const t = data.reduce((a, d) => ({ v: a.v+d.verilen, m: a.m+d.mahsup, b: a.b+d.bakiye, f: a.f+d.faturalanan, o: a.o+d.odenen, ob: a.ob+d.odenmemis }), {v:0,m:0,b:0,f:0,o:0,ob:0});
-  rows.push(['TOPLAM', '', t.v, t.m, t.b, t.f, t.o, t.ob]);
+  const t = data.reduce((a, d) => ({ v:a.v+d.verilen, m:a.m+d.mahsup, b:a.b+d.bakiye, f:a.f+d.faturalanan, k:a.k+d.kesinti, n:a.n+d.netOdenecek, o:a.o+d.odenen, ob:a.ob+d.odenmemis }), {v:0,m:0,b:0,f:0,k:0,n:0,o:0,ob:0});
+  rows.push(['TOPLAM', '', t.v, t.m, t.b, t.f, t.k, t.n, t.o, t.ob]);
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{wch:18},{wch:22},{wch:14},{wch:12},{wch:14},{wch:14},{wch:14},{wch:16}];
+  ws['!cols'] = [{wch:18},{wch:22},{wch:13},{wch:11},{wch:13},{wch:15},{wch:13},{wch:14},{wch:13},{wch:15}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Cari Durumu');
   const proj = (state.settings.projectName || 'proje').replace(/[^a-z0-9]/gi, '_');
@@ -7484,39 +7494,27 @@ function renderCariTable() {
   const tbody = document.getElementById('cariTableBody');
   if (!tbody) return;
   tbody.innerHTML = '';
-  // Faturası veya avansı olan yaprak kalemleri topla
-  const leaves = getLeafBudgetItems().filter(b => {
-    return getInvoicesForBudgetItem(b).length > 0 || getBudgetItemAvansVerilenTry(b) > 0;
-  });
-  if (leaves.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Henüz avans veya hakediş girilmiş kalem yok</td></tr>';
+  const data = getCariDurumuData();
+  if (data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" class="empty-state">Henüz avans veya hakediş girilmiş kalem yok</td></tr>';
     return;
   }
-  let tVer=0, tMah=0, tBak=0, tFat=0, tOde=0, tBorc=0;
-  leaves.forEach(b => {
-    const verilen = getBudgetItemAvansVerilenTry(b);
-    const mahsup = getBudgetItemAvansMahsupTry(b);
-    const bakiye = verilen - mahsup;
-    const faturalanan = getBudgetItemFaturalananTry(b);
-    const odenen = getBudgetItemOdenenTry(b);
-    // Ödenmemiş borç = faturalanan − (taksit ödemeleri + mahsup avans)
-    // = faturanın ödenmemiş net bakiyesi
-    let odenmemis = 0;
-    getInvoicesForBudgetItem(b).forEach(inv => {
-      const c = calcInvoiceTotals(inv);
-      odenmemis += (c.remaining || 0);
-    });
-    tVer+=verilen; tMah+=mahsup; tBak+=bakiye; tFat+=faturalanan; tOde+=odenen; tBorc+=odenmemis;
+  let tVer=0, tMah=0, tBak=0, tFat=0, tKes=0, tNet=0, tOde=0, tBorc=0;
+  data.forEach(d => {
+    tVer+=d.verilen; tMah+=d.mahsup; tBak+=d.bakiye; tFat+=d.faturalanan;
+    tKes+=d.kesinti; tNet+=d.netOdenecek; tOde+=d.odenen; tBorc+=d.odenmemis;
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td class="mono">${b.code || '—'}</td>
-      <td>${escapeHtml(b.supplier || b.name || '—')}</td>
-      <td class="right">${verilen>0?fmtTL(verilen):'—'}</td>
-      <td class="right" style="color:#2f6b48;">${mahsup>0?fmtTL(mahsup):'—'}</td>
-      <td class="right" style="background:rgba(184,134,61,0.05);color:${bakiye>0.5?'var(--accent)':'var(--text-muted)'};font-weight:${bakiye>0.5?'600':'400'};">${bakiye>0.5?fmtTL(bakiye):'—'}</td>
-      <td class="right">${faturalanan>0?fmtTL(faturalanan):'—'}</td>
-      <td class="right" style="background:rgba(30,58,95,0.03);color:#1e3a5f;">${odenen>0.5?fmtTL(odenen):'—'}</td>
-      <td class="right" style="background:rgba(164,65,50,0.04);color:${odenmemis>0.5?'#a44132':'var(--text-muted)'};font-weight:${odenmemis>0.5?'600':'400'};">${odenmemis>0.5?fmtTL(odenmemis):'—'}</td>
+      <td class="mono">${d.code || '—'}</td>
+      <td>${escapeHtml(d.supplier || '—')}</td>
+      <td class="right">${d.verilen>0?fmtTL(d.verilen):'—'}</td>
+      <td class="right" style="color:#2f6b48;">${d.mahsup>0?fmtTL(d.mahsup):'—'}</td>
+      <td class="right" style="background:rgba(184,134,61,0.05);color:${d.bakiye>0.5?'var(--accent)':'var(--text-muted)'};font-weight:${d.bakiye>0.5?'600':'400'};">${d.bakiye>0.5?fmtTL(d.bakiye):'—'}</td>
+      <td class="right">${d.faturalanan>0?fmtTL(d.faturalanan):'—'}</td>
+      <td class="right" style="color:${d.kesinti>0.5?'#a44132':'var(--text-muted)'};">${d.kesinti>0.5?'−'+fmtTL(d.kesinti):'—'}</td>
+      <td class="right" style="background:rgba(30,58,95,0.05);color:#1e3a5f;font-weight:600;">${d.netOdenecek>0.5?fmtTL(d.netOdenecek):'—'}</td>
+      <td class="right" style="background:rgba(30,58,95,0.03);color:#1e3a5f;">${d.odenen>0.5?fmtTL(d.odenen):'—'}</td>
+      <td class="right" style="background:rgba(164,65,50,0.04);color:${d.odenmemis>0.5?'#a44132':'var(--text-muted)'};font-weight:${d.odenmemis>0.5?'600':'400'};">${d.odenmemis>0.5?fmtTL(d.odenmemis):'—'}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -7528,6 +7526,8 @@ function renderCariTable() {
     <td class="right" style="color:#2f6b48;">${fmtTL(tMah)}</td>
     <td class="right" style="background:rgba(184,134,61,0.05);color:var(--accent);">${fmtTL(tBak)}</td>
     <td class="right">${fmtTL(tFat)}</td>
+    <td class="right" style="color:#a44132;">${tKes>0.5?'−'+fmtTL(tKes):'—'}</td>
+    <td class="right" style="background:rgba(30,58,95,0.05);color:#1e3a5f;font-weight:700;">${fmtTL(tNet)}</td>
     <td class="right" style="background:rgba(30,58,95,0.03);color:#1e3a5f;">${fmtTL(tOde)}</td>
     <td class="right" style="background:rgba(164,65,50,0.04);color:#a44132;">${fmtTL(tBorc)}</td>
   `;
