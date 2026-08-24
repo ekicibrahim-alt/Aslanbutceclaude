@@ -1677,10 +1677,10 @@ body.view-mode .lock-status * {
     </div>
     <div class="form-row form-row-2">
       <div class="form-field"><label>Avans Tutarı (TL) *</label><input type="text" id="av-tutar" placeholder="0,00"></div>
-      <div class="form-field"><label>Tarih *</label><input type="date" id="av-tarih" onchange="updateAvansFxHint()"></div>
+      <div class="form-field"><label>Tarih *</label><input type="date" id="av-tarih" onchange="onAvansTarihChange()"></div>
     </div>
     <div class="form-row form-row-2">
-      <div class="form-field"><label>Kur (USD/TRY) <span style="font-weight:400;color:var(--text-muted);font-size:11px;">— o günkü kur, dolar sabitlenir</span></label><input type="text" id="av-fx" placeholder="örn. 40,50"></div>
+      <div class="form-field"><label>Kur (USD/TRY) <span style="font-weight:400;color:var(--text-muted);font-size:11px;">— o günkü kur, dolar sabitlenir</span></label><input type="text" id="av-fx" placeholder="örn. 40,50" oninput="onAvansFxManualEdit()"></div>
       <div class="form-field"><label>Not</label><input type="text" id="av-not" placeholder="Sözleşme avansı..."></div>
     </div>
     <div style="padding:10px 12px;background:rgba(47,107,72,0.06);border-radius:6px;font-size:12px;color:#2f6b48;margin-bottom:12px;">
@@ -2139,7 +2139,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v5.8 (24.08)';
+const APP_BUILD = 'v5.9 (24.08)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -7579,6 +7579,7 @@ function openAvansModal() {
   document.getElementById('av-tarih').value = new Date().toISOString().substring(0,10);
   document.getElementById('av-fx').value = '';
   document.getElementById('av-not').value = '';
+  avansFxManuallyEdited = false;
   updateAvansFxHint();
   document.getElementById('avansModal').classList.add('active');
 }
@@ -7714,21 +7715,31 @@ function renderCariTable() {
   tbody.appendChild(tr);
 }
 
-// Tarihe göre kur ipucu (boşsa otomatik doldur)
-function updateAvansFxHint() {
+// Tarihe göre kur öner. force=true → elle değiştirilmemişse üzerine yaz (tarih değişince)
+function updateAvansFxHint(force) {
   const tarih = document.getElementById('av-tarih').value;
   const fxEl = document.getElementById('av-fx');
   if (!fxEl || !tarih) return;
-  // Kur alanı boşsa otomatik öner
-  if (!fxEl.value) {
+  // Kur alanı boşsa VEYA tarih değişti de kullanıcı kuru elle düzenlemediyse → otomatik öner
+  if (!fxEl.value || (force && !avansFxManuallyEdited)) {
     const info = getFxForDateWithSource(tarih);
     if (info.exact || info.interpolated) {
       fxEl.value = fmtNum(info.rate, 4);
+    } else if (info.outOfRange || info.noData) {
+      // Aralık dışı/veri yok — en yakın öneriyi yine koy ama uyar
+      fxEl.value = fmtNum(info.rate, 4);
     }
-    // Uyarı göster/temizle
     showAvansFxWarning(info);
+  } else {
+    // Kur elle girilmiş — sadece uyarıyı güncelle
+    showAvansFxWarning(getFxForDateWithSource(tarih));
   }
 }
+
+// Kullanıcı kur alanını elle düzenledi mi (tarih değişince üzerine yazma)
+let avansFxManuallyEdited = false;
+function onAvansFxManualEdit() { avansFxManuallyEdited = true; }
+function onAvansTarihChange() { updateAvansFxHint(true); }
 
 // Kur ve kaynağını birlikte döndür (tam eşleşme / interpolasyon / aralık dışı / yok)
 function getFxForDateWithSource(dateStr) {
@@ -7789,6 +7800,7 @@ function editAvans(id) {
   const g0 = (av.girisler && av.girisler[0]) || {};
   document.getElementById('av-fx').value = g0.fx ? fmtNum(g0.fx, 2) : '';
   document.getElementById('av-not').value = av.not || '';
+  avansFxManuallyEdited = false;  // tarih değişirse kur güncellensin; dokunmazsa mevcut korunur
   document.getElementById('avansModal').classList.add('active');
 }
 
@@ -7854,6 +7866,7 @@ function addAvansToPool(id) {
   document.getElementById('av-tarih').value = new Date().toISOString().substring(0,10);
   document.getElementById('av-fx').value = '';
   document.getElementById('av-not').value = '';
+  avansFxManuallyEdited = false;
   updateAvansFxHint();
   document.getElementById('avansModal').classList.add('active');
 }
