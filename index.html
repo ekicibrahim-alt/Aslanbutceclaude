@@ -2139,7 +2139,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v6.0 (24.08)';
+const APP_BUILD = 'v6.1 (24.08)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -8659,33 +8659,46 @@ function renderDeductionTable() {
 function renderDeductionChart() {
   const canvas = document.getElementById('deductionChart');
   if (!canvas) return;
-  const cols = state.settings.deductionColumns;
-  const totals = cols.map(c => 
-    state.deductions.reduce((s, d) => s + ((d.columns && d.columns[c.key]) || 0), 0)
-  );
-  
+  if (typeof Chart === 'undefined') return;
+
+  // Fatura kesintilerini tipe göre topla (yeni sistem: kesintiler faturaların içinde)
+  let avans = 0, teminat = 0, yansitma = 0, ceza = 0;
+  (state.invoices || []).forEach(inv => {
+    (inv.kesintiler || []).forEach(k => {
+      const tutar = k.tutar || 0;
+      if (k.tip === 'avans') avans += tutar;
+      else if (k.tip === 'teminat') teminat += tutar;
+      else if (k.tip === 'yansitma') yansitma += tutar;
+      else if (k.tip === 'ceza') ceza += tutar;
+    });
+  });
+
+  const segments = [
+    { label: 'Avans Mahsubu', value: avans, color: 'rgba(184, 134, 61, 0.8)' },
+    { label: 'Teminat', value: teminat, color: 'rgba(30, 58, 95, 0.8)' },
+    { label: 'Yansıtma', value: yansitma, color: 'rgba(47, 107, 72, 0.8)' },
+    { label: 'Ceza', value: ceza, color: 'rgba(164, 65, 50, 0.8)' }
+  ].filter(s => s.value > 0.5);
+
   if (deductionChartInst) deductionChartInst.destroy();
-  if (cols.length === 0 || totals.every(t => t === 0)) {
+
+  if (segments.length === 0) {
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = '13px IBM Plex Sans';
+    ctx.fillStyle = '#9a948a';
+    ctx.textAlign = 'center';
+    ctx.fillText('Henüz kesinti kaydı yok', canvas.width / 2, canvas.height / 2);
     return;
   }
-  
+
   deductionChartInst = new Chart(canvas.getContext('2d'), {
     type: 'doughnut',
     data: {
-      labels: cols.map(c => c.label),
+      labels: segments.map(s => s.label),
       datasets: [{
-        data: totals,
-        backgroundColor: [
-          'rgba(30, 58, 95, 0.8)',
-          'rgba(184, 134, 61, 0.8)',
-          'rgba(47, 107, 72, 0.8)',
-          'rgba(164, 65, 50, 0.8)',
-          'rgba(106, 101, 92, 0.8)',
-          'rgba(48, 90, 138, 0.8)',
-          'rgba(154, 148, 138, 0.8)',
-        ],
+        data: segments.map(s => s.value),
+        backgroundColor: segments.map(s => s.color),
         borderWidth: 2,
         borderColor: '#ffffff'
       }]
