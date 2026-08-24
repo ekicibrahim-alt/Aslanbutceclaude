@@ -658,6 +658,7 @@ body.view-mode .lock-status * {
 @media (max-width: 900px) {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .form-row-3, .form-row-4 { grid-template-columns: 1fr 1fr; }
+  .deduction-dist-grid { grid-template-columns: 1fr !important; }
 }
 </style>
 </head>
@@ -1344,8 +1345,13 @@ body.view-mode .lock-status * {
       <div class="section-header">
         <h2 class="section-title">Kesinti Dağılımı</h2>
       </div>
-      <div class="chart-container" style="height: 280px;">
-        <canvas id="deductionChart"></canvas>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center;" class="deduction-dist-grid">
+        <div class="chart-container" style="height: 280px;">
+          <canvas id="deductionChart"></canvas>
+        </div>
+        <div id="deductionSummary">
+          <!-- Kesinti özet tablosu -->
+        </div>
       </div>
     </div>
   </section>
@@ -2139,7 +2145,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v6.1 (24.08)';
+const APP_BUILD = 'v6.3 (24.08)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -8663,12 +8669,17 @@ function renderDeductionChart() {
 
   // Fatura kesintilerini tipe göre topla (yeni sistem: kesintiler faturaların içinde)
   let avans = 0, teminat = 0, yansitma = 0, ceza = 0;
+  const yansitmaByLabel = {};  // yansıtma açıklamasına göre kırılım
   (state.invoices || []).forEach(inv => {
     (inv.kesintiler || []).forEach(k => {
       const tutar = k.tutar || 0;
       if (k.tip === 'avans') avans += tutar;
       else if (k.tip === 'teminat') teminat += tutar;
-      else if (k.tip === 'yansitma') yansitma += tutar;
+      else if (k.tip === 'yansitma') {
+        yansitma += tutar;
+        const lbl = (k.label && k.label.trim()) || 'Diğer';
+        yansitmaByLabel[lbl] = (yansitmaByLabel[lbl] || 0) + tutar;
+      }
       else if (k.tip === 'ceza') ceza += tutar;
     });
   });
@@ -8679,6 +8690,63 @@ function renderDeductionChart() {
     { label: 'Yansıtma', value: yansitma, color: 'rgba(47, 107, 72, 0.8)' },
     { label: 'Ceza', value: ceza, color: 'rgba(164, 65, 50, 0.8)' }
   ].filter(s => s.value > 0.5);
+
+  // Özet tablo (kalem + tutar + yüzde)
+  const summaryEl = document.getElementById('deductionSummary');
+  if (summaryEl) {
+    const toplam = segments.reduce((s, x) => s + x.value, 0);
+    if (segments.length === 0) {
+      summaryEl.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:20px;">Henüz kesinti kaydı yok</div>';
+    } else {
+      let rows = segments.map(s => {
+        const pct = toplam > 0 ? (s.value / toplam * 100) : 0;
+        let html = `
+          <tr>
+            <td style="padding:8px 10px;">
+              <span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${s.color};margin-right:8px;vertical-align:middle;"></span>
+              ${s.label}
+            </td>
+            <td style="padding:8px 10px;text-align:right;font-weight:600;">${fmtTL(s.value)}</td>
+            <td style="padding:8px 10px;text-align:right;color:var(--text-muted);">${fmtNum(pct, 1)}%</td>
+          </tr>`;
+        // Yansıtma satırının altına açıklama bazlı kırılım (yemek, sigorta, İSG...)
+        if (s.label === 'Yansıtma') {
+          const alt = Object.keys(yansitmaByLabel)
+            .map(lbl => ({ lbl, val: yansitmaByLabel[lbl] }))
+            .sort((a, b) => b.val - a.val);
+          alt.forEach(a => {
+            const altPct = s.value > 0 ? (a.val / s.value * 100) : 0;
+            html += `
+              <tr style="background:rgba(47,107,72,0.03);">
+                <td style="padding:5px 10px 5px 30px;font-size:12px;color:var(--text-muted);">↳ ${escapeHtml(a.lbl)}</td>
+                <td style="padding:5px 10px;text-align:right;font-size:12px;color:var(--text-muted);">${fmtTL(a.val)}</td>
+                <td style="padding:5px 10px;text-align:right;font-size:11px;color:var(--text-muted);">${fmtNum(altPct, 0)}%*</td>
+              </tr>`;
+          });
+        }
+        return html;
+      }).join('');
+      summaryEl.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="border-bottom:2px solid var(--border-strong);">
+              <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--text-muted);text-transform:uppercase;">Kesinti Türü</th>
+              <th style="padding:8px 10px;text-align:right;font-size:11px;color:var(--text-muted);text-transform:uppercase;">Tutar</th>
+              <th style="padding:8px 10px;text-align:right;font-size:11px;color:var(--text-muted);text-transform:uppercase;">Pay</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+          <tfoot>
+            <tr style="border-top:2px solid var(--border-strong);font-weight:700;background:rgba(30,58,95,0.04);">
+              <td style="padding:8px 10px;">TOPLAM KESİNTİ</td>
+              <td style="padding:8px 10px;text-align:right;">${fmtTL(toplam)}</td>
+              <td style="padding:8px 10px;text-align:right;">100%</td>
+            </tr>
+          </tfoot>
+        </table>
+        ${Object.keys(yansitmaByLabel).length > 0 ? '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;padding:0 10px;">↳ Yansıtma açıklamasına göre kırılım · %* = yansıtma içindeki pay</div>' : ''}`;
+    }
+  }
 
   if (deductionChartInst) deductionChartInst.destroy();
 
