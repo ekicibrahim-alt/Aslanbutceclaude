@@ -798,10 +798,10 @@ body.view-mode .lock-status * {
     <!-- Tahmini bitiş -->
     <div class="kpi-grid" style="grid-template-columns: repeat(2, 1fr);">
       <div class="kpi-card">
-        <div class="label">Tahmini Bitiş Maliyeti (plana dayalı)</div>
+        <div class="label">Tahmini Bitiş Maliyeti</div>
         <div class="value" id="kpi-eac-try">—</div>
         <div class="value-secondary" id="kpi-eac-usd">—</div>
-        <div class="value-note" id="kpi-eac-note" style="margin-top:4px;font-size:11px;">Planlı ilerleme ile karşılaştırılır — saha planın gerisindeyse gerçek maliyet daha yüksek olabilir</div>
+        <div class="value-note" id="kpi-eac-note" style="margin-top:4px;font-size:11px;"></div>
       </div>
       <div class="kpi-card">
         <div class="label">Tahmini Bitiş Tarihi</div>
@@ -809,6 +809,9 @@ body.view-mode .lock-status * {
         <div class="value-note" id="kpi-eta-delay">—</div>
       </div>
     </div>
+
+    <!-- TEŞHİS PANELİ: harcama durumu + iki ihtimal + kontrol önerisi -->
+    <div id="diagnosisPanel" style="display:none; margin-top:16px;"></div>
 
     <!-- Teminat Mektubu Uyarı Kartı -->
     <div id="ozetMektupUyari" style="display:none;"></div>
@@ -2145,7 +2148,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v6.3 (24.08)';
+const APP_BUILD = 'v6.4 (24.08)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -4279,18 +4282,59 @@ function computeOverallProgress() {
   // Planlı ilerleme (iş programından — "fiziksel" değil, plana dayalı)
   const physicalPct = totalBudget > 0 ? (totalPlanned / totalBudget) * 100 : 0;
   
-  // CPI = Kazanılan Değer (planlı ilerleme değeri) / Gerçek Maliyet (net iş gerçekleşmesi)
-  // EAC = Bütçe / CPI. SPI (zaman) değil CPI (maliyet) kullanılır.
-  // Planlı ilerleme faturalanandan önde → CPI>1 → EAC<bütçe (iyi)
-  const cpi = (totalActualUsd > 0 && totalPlanned > 0) ? (totalPlanned / totalActualUsd) : null;
-  // SPI ayrıca raporlanır (zaman performansı) ama EAC'de kullanılmaz
-  const spi = totalPlanned > 0 ? (totalActualUsd / totalPlanned) : null;
-  const eac = (cpi && cpi > 0) ? (totalBudget / cpi) : totalBudget;
+  // ── TEŞHİS ARACI (EAC yerine) ──
+  // Harcama oranı = gerçekleşen / planlanan (plan eğrisine göre, aynı tarihe kadar)
+  // Bu oran, harcamanın zaman-planının neresinde olduğunu söyler.
+  const harcamaOrani = (totalPlanned > 0) ? (totalActualUsd / totalPlanned) : null;
+  const TOLERANS = 0.10; // ±%10 bant
+  
+  // Durum teşhisi: geride / uyumlu / onde
+  let durum = 'veriYok';
+  if (harcamaOrani !== null && totalPlanned > 0.5) {
+    if (harcamaOrani < 1 - TOLERANS) durum = 'geride';       // harcama planın gerisinde
+    else if (harcamaOrani > 1 + TOLERANS) durum = 'onde';    // harcama planın önünde
+    else durum = 'uyumlu';                                    // ±%10 içinde
+  }
+  
+  // EAC — ASİMETRİK: aşağı yönde bütçede kal (rahatsız olmuyorsun),
+  // yukarı yönde aşımı göster (uyarılman lazım)
+  let eac, eacDurum;
+  if (durum === 'onde') {
+    // Harcama planın önünde → aşım riski → bütçe × oran
+    eac = totalBudget * harcamaOrani;
+    eacDurum = 'asim';
+  } else {
+    // Geride, uyumlu veya veri yok → bütçe (aşağı yönlü koruma, düşürme)
+    eac = totalBudget;
+    eacDurum = (durum === 'geride') ? 'gerideBütce' : 'butce';
+  }
   const eacTry = eac * avgFx;
   
-  // Proje bitiş tarihi tahmini
+  // SPI/CPI raporlama için (teşhiste kullanılmıyor ama gösterilebilir)
+  const spi = totalPlanned > 0 ? (totalActualUsd / totalPlanned) : null;
+  const cpi = (totalActualUsd > 0 && totalPlanned > 0) ? (totalPlanned / totalActualUsd) : null;
+  
+  // Zaman durumu — sürenin ne kadarı geçti
+  let zamanGecenPct = null;
+  {
+    let minStart = null, maxEnd = null;
+    leaves.forEach(b => {
+      const p = state.program[b.id];
+      if (p && p.start && (!minStart || p.start < minStart)) minStart = p.start;
+      if (p && p.end && (!maxEnd || p.end > maxEnd)) maxEnd = p.end;
+    });
+    if (minStart && maxEnd) {
+      const s = new Date(minStart.length === 7 ? minStart + '-01' : minStart);
+      const e = new Date(maxEnd.length === 7 ? maxEnd + '-01' : maxEnd);
+      if (!isNaN(s) && !isNaN(e) && e > s) {
+        zamanGecenPct = Math.max(0, Math.min(100, ((target - s) / (e - s)) * 100));
+      }
+    }
+  }
+  
+  // Proje bitiş tarihi tahmini (sadece harcama önündeyse anlamlı; geride ise plan tarihini kullan)
   let etaDate = null;
-  if (totalActualUsd > 0 && totalBudget > 0) {
+  if (durum === 'onde' && totalActualUsd > 0 && totalBudget > 0) {
     let minStart = null;
     leaves.forEach(b => {
       const p = state.program[b.id];
@@ -4300,7 +4344,8 @@ function computeOverallProgress() {
       const startStr = minStart.length === 7 ? minStart + '-01' : minStart;
       const startD = new Date(startStr);
       const elapsedMs = target - startD;
-      if (!isNaN(startD.getTime()) && elapsedMs > 0) {
+      if (!isNaN(startD.getTime()) && elapsedMs > 0 && totalPlanned > 0) {
+        // Harcama hızına göre: planlanan işi bu hızla ne zaman bitirir
         const totalMs = elapsedMs * (totalBudget / totalActualUsd);
         etaDate = new Date(startD.getTime() + totalMs);
       }
@@ -4314,7 +4359,8 @@ function computeOverallProgress() {
     faturalananUsd, faturalananTry,
     physicalPct,
     financialPct, financialPctUsd, financialPctTry,
-    cpi, spi, eac, eacTry, avgFx, etaDate
+    cpi, spi, eac, eacTry, avgFx, etaDate,
+    harcamaOrani, durum, eacDurum, zamanGecenPct
   };
 }
 
@@ -4500,6 +4546,59 @@ function getFxFromQuarterlyFallback(date) {
   return last.rate;
 }
 
+// TEŞHİS PANELİ — harcama durumu + iki ihtimal + kontrol önerisi
+function renderDiagnosisPanel(overall) {
+  const panel = document.getElementById('diagnosisPanel');
+  if (!panel) return;
+  const durum = overall.durum;
+  if (durum === 'veriYok' || overall.harcamaOrani === null) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = 'block';
+  
+  const oran = overall.harcamaOrani;
+  const oranPct = (oran * 100).toFixed(0);
+  const zaman = overall.zamanGecenPct !== null ? overall.zamanGecenPct.toFixed(0) : '?';
+  
+  let renk, baslik, ihtimal, kontrol, ikon;
+  if (durum === 'onde') {
+    renk = '#a44132'; ikon = '📈';
+    baslik = `Harcama planın ÖNÜNDE (planlanan işin %${oranPct}'i kadar harcandı)`;
+    ihtimal = `<strong>İki ihtimal var:</strong><br>
+      <b>(c) İş hızlı gidiyor</b> — erken bitecek, toplam maliyet yine bütçeye yakın kalır. Sorun yok.<br>
+      <b>(d) Pahalıya gidiyor</b> — keşif/metraj eksik hesaplanmış, maliyet aşacak. <b>Bu ciddi.</b>`;
+    kontrol = `<strong>⚠ Kontrol et:</strong> Keşif fiyatları güncel mi? Metrajlar doğru mu? Beklenmedik imalat/malzeme artışı var mı? Fazla harcama gerçek bir aşımsa, revize bütçe oluşturmayı düşün.`;
+  } else if (durum === 'geride') {
+    renk = '#7a5a1a'; ikon = '📉';
+    baslik = `Harcama planın GERİSİNDE (planlanan işin %${oranPct}'i kadar harcandı)`;
+    ihtimal = `<strong>İki ihtimal var:</strong><br>
+      <b>(a) Süre gecikiyor / faturalar gelmedi</b> — iş yavaş ilerliyor ya da hakedişler henüz girilmedi. Maliyet sonunda bütçeye yaklaşır.<br>
+      <b>(b) Bütçe düşüyor</b> — keşif fazla çıkmış, iş gerçekten ucuza geliyor. Bütçe altında bitebilir.`;
+    kontrol = `<strong>Kontrol et:</strong> İş programı gerçekten geride mi, yoksa faturalar mı zamanında girilmiyor? Saha ilerlemesi plana uygunsa ama harcama azsa → keşif fazla olabilir. Süre kayması varsa iş programını güncelle.`;
+  } else {
+    renk = '#2f6b48'; ikon = '✅';
+    baslik = `Harcama plan ile UYUMLU (planlanan işin %${oranPct}'i kadar harcandı)`;
+    ihtimal = `Harcama, zaman planıyla uyumlu ilerliyor. Belirgin sapma yok.`;
+    kontrol = `Şu an müdahale gerektiren bir durum görünmüyor. İzlemeye devam.`;
+  }
+  
+  panel.innerHTML = `
+    <div style="border:1px solid var(--border); border-left:4px solid ${renk}; border-radius:8px; padding:16px 20px; background:#fff;">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+        <span style="font-size:18px;">${ikon}</span>
+        <span style="font-weight:700; color:${renk}; font-size:14px;">${baslik}</span>
+      </div>
+      <div style="display:flex; gap:24px; margin-bottom:12px; font-size:12px; color:var(--text-muted); flex-wrap:wrap;">
+        <span>⏱ Sürenin <b style="color:var(--text);">%${zaman}</b>'i geçti</span>
+        <span>💰 Harcama, plan eğrisinin <b style="color:${renk};">%${oranPct}</b>'i seviyesinde</span>
+        <span>📊 Tahmini maliyet: <b style="color:var(--text);">${fmtTL(overall.eacTry)}</b></span>
+      </div>
+      <div style="font-size:13px; line-height:1.6; margin-bottom:10px;">${ihtimal}</div>
+      <div style="font-size:13px; line-height:1.6; padding:10px 12px; background:rgba(0,0,0,0.02); border-radius:6px;">${kontrol}</div>
+    </div>`;
+}
+
 function renderKpis() {
   const overall = computeOverallProgress();
   const fx = getCurrentFx();
@@ -4565,12 +4664,36 @@ function renderKpis() {
   // EAC ve ETA
   document.getElementById('kpi-eac-try').textContent = fmtTL(overall.eacTry || overall.eac * fx);
   document.getElementById('kpi-eac-usd').textContent = fmtUSD(overall.eac);
+  // EAC notu — duruma göre
+  const eacNote = document.getElementById('kpi-eac-note');
+  if (eacNote) {
+    if (overall.eacDurum === 'asim') {
+      eacNote.textContent = '⚠ Harcama planın önünde — bütçe aşım riski';
+      eacNote.style.color = '#a44132';
+    } else if (overall.eacDurum === 'gerideBütce') {
+      eacNote.textContent = 'Harcama planın gerisinde — bütçe baz alındı (aşağı yönlü sapma keşifle doğrulanmalı)';
+      eacNote.style.color = 'var(--text-muted)';
+    } else {
+      eacNote.textContent = 'Plan ile uyumlu — bütçe geçerli';
+      eacNote.style.color = 'var(--text-muted)';
+    }
+  }
   
   const eta = document.getElementById('kpi-eta');
   const etaDelay = document.getElementById('kpi-eta-delay');
-  if (overall.etaDate && !isNaN(overall.etaDate.getTime())) {
+  if (overall.durum === 'geride' || overall.durum === 'veriYok') {
+    // Harcama geride/veri yok → hız bazlı ETA anlamsız, plan bitişini göster
+    let planEnd = null;
+    if (state.settings.endMonth) planEnd = new Date(state.settings.endMonth + '-15');
+    if (planEnd && !isNaN(planEnd.getTime())) {
+      eta.textContent = planEnd.toLocaleDateString('tr-TR', { month: 'short', year: 'numeric' });
+      etaDelay.textContent = overall.durum === 'geride' ? 'Plan bitişi (harcama geride — hız tahmini yapılmadı)' : 'Plan bitişi';
+    } else {
+      eta.textContent = '—';
+      etaDelay.textContent = 'Plan bitişi tanımlı değil';
+    }
+  } else if (overall.etaDate && !isNaN(overall.etaDate.getTime())) {
     eta.textContent = overall.etaDate.toLocaleDateString('tr-TR', { month: 'short', year: 'numeric' });
-    // Plan bitişi: önce ayarlardan, yoksa iş programındaki en geç bitiş
     let planEnd = null;
     if (state.settings.endMonth) {
       planEnd = new Date(state.settings.endMonth + '-15');
@@ -4583,7 +4706,7 @@ function renderKpis() {
     }
     if (planEnd && !isNaN(planEnd.getTime())) {
       const diffDays = Math.round((overall.etaDate - planEnd) / (1000 * 60 * 60 * 24));
-      if (diffDays > 3650) etaDelay.textContent = 'Gerçekleşme çok düşük — tahmin güvenilir değil';
+      if (diffDays > 3650) etaDelay.textContent = 'Tahmin güvenilir değil';
       else if (diffDays > 30) etaDelay.textContent = `Plana göre ~${diffDays} gün gecikme`;
       else if (diffDays < -30) etaDelay.textContent = `Plana göre ~${-diffDays} gün önde`;
       else etaDelay.textContent = 'Plan dahilinde';
@@ -4592,8 +4715,11 @@ function renderKpis() {
     }
   } else {
     eta.textContent = '—';
-    etaDelay.textContent = 'Hesaplama için fatura ve iş programı başlangıcı gerekli';
+    etaDelay.textContent = 'Hesaplama için fatura ve iş programı gerekli';
   }
+  
+  // ── TEŞHİS PANELİ ──
+  renderDiagnosisPanel(overall);
 
   // Teminat mektubu uyarısı — özet sayfasında
   const uyariEl = document.getElementById('ozetMektupUyari');
