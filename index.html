@@ -2138,7 +2138,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v5.5 (17.06)';
+const APP_BUILD = 'v5.7 (24.08)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -2835,6 +2835,11 @@ function applyProjectMigrations(p) {
     p.settings.categories = JSON.parse(JSON.stringify(DEFAULT_PROJECT.settings.categories));
   }
   if (!p.settings.dailyFx) p.settings.dailyFx = [];
+  // Eski virgüllü kur değerlerini sayısala çevir ("18,7387" → 18.7387)
+  p.settings.dailyFx = p.settings.dailyFx.map(d => ({
+    date: d.date,
+    rate: typeof d.rate === 'string' ? parseDecimal(d.rate) : d.rate
+  })).filter(d => d.date && d.rate > 0);
   p.collections = p.collections.map(c => {
     if (c.date && !c.dueDate) {
       const actualAmt = c.actual || 0;
@@ -4356,8 +4361,8 @@ function getFxForDate(dateStr) {
   if (isNaN(target.getTime())) return getFxFromQuarterlyFallback(new Date());
   
   const daily = (state.settings.dailyFx || [])
-    .filter(d => d.date && d.rate > 0)
-    .map(d => ({ date: new Date(d.date), rate: parseFloat(d.rate) }))
+    .filter(d => d.date && parseDecimal(d.rate) > 0)
+    .map(d => ({ date: new Date(d.date), rate: parseDecimal(d.rate) }))
     .filter(d => !isNaN(d.date.getTime()))
     .sort((a, b) => a.date - b.date);
   
@@ -6250,6 +6255,7 @@ function renderInstallmentRows() {
     `;
     container.appendChild(div);
   });
+  attachDateWatchers(container);  // taksit tarih alanlarına uyarı bağla
 }
 
 function onInstallmentStatusChange(idx, newStatus) {
@@ -6277,6 +6283,19 @@ function updatePaymentSummary() {
 }
 
 async function saveInvoice() {
+  // Geçersiz tarih kontrolü (31 Nisan gibi girişleri yakala)
+  const dateEl = document.getElementById('im-date');
+  const dueEl = document.getElementById('im-due');
+  if ((dateEl.validity && dateEl.validity.badInput) || (dueEl.validity && dueEl.validity.badInput)) {
+    alert('⚠ Geçersiz tarih girdiniz\n\nFatura veya vade tarihinde o ayda olmayan bir gün var (örn. 31 Nisan). Lütfen tarihleri kontrol edin.');
+    return;
+  }
+  // Taksit tarihlerini de kontrol et
+  const badInstallment = invoiceInstallments.some(inst => inst.dueDate && !isValidDateStr(inst.dueDate));
+  if (badInstallment) {
+    alert('⚠ Geçersiz taksit vade tarihi\n\nBir taksitin vade tarihinde geçersiz gün var. Lütfen kontrol edin.');
+    return;
+  }
   const invoiceNo = document.getElementById('im-invoiceNo').value.trim();
   const supplier = document.getElementById('im-supplier').value.trim();
   const date = document.getElementById('im-date').value;
@@ -6651,7 +6670,7 @@ function closeDailyFxModal() {
 
 async function saveDailyFx() {
   const date = document.getElementById('dfx-date').value;
-  const rate = parseFloat(document.getElementById('dfx-rate').value);
+  const rate = parseDecimal(document.getElementById('dfx-rate').value);
   if (!date || !rate || rate <= 0) { alert('Tarih ve geçerli bir kur zorunlu'); return; }
   // Aynı tarih varsa güncelle
   const existing = state.settings.dailyFx.find(d => d.date === date);
@@ -6664,7 +6683,7 @@ async function saveDailyFx() {
 
 async function updateDailyFx(idx, value) {
   if (!requireEdit()) return;
-  const v = parseFloat(value);
+  const v = parseDecimal(value);
   if (!v || v <= 0) return;
   state.settings.dailyFx[idx].rate = v;
   await saveState();
@@ -6796,6 +6815,62 @@ let currentInvoiceImageMime = null;
 let invoiceFxManuallyEdited = false; // kullanıcı kuru elle değiştirdiyse otomatik override etme
 
 // Fatura tarihi değişince → o tarihteki günlük kuru otomatik koy (kullanıcı manuel edit etmediyse)
+// ── TARİH DOĞRULAMA ──
+// type="date" geçersiz günü (31 Nisan gibi) sessizce boşaltır; kullanıcıyı uyar.
+function isValidDateStr(str) {
+  if (!str) return false;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str);
+  if (!m) return false;
+  const y = +m[1], mo = +m[2], d = +m[3];
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return false;
+  const dt = new Date(y, mo - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d;
+}
+
+// type="date" alanına yazılan geçersiz gün tarayıcıda boşalır → kullanıcıyı uyar
+function watchDateInput(inputEl) {
+  if (!inputEl || inputEl._dateWatched) return;
+  inputEl._dateWatched = true;
+  const showWarn = (msg) => {
+    let warn = inputEl.parentElement.querySelector('.date-warn');
+    if (!warn) {
+      warn = document.createElement('div');
+      warn.className = 'date-warn';
+      warn.style.cssText = 'color:#a44132;font-size:11px;margin-top:3px;';
+      inputEl.parentElement.appendChild(warn);
+    }
+    warn.textContent = msg;
+    inputEl.style.borderColor = '#a44132';
+  };
+  const clearWarn = () => {
+    const warn = inputEl.parentElement.querySelector('.date-warn');
+    if (warn) warn.remove();
+    inputEl.style.borderColor = '';
+  };
+  // Klavyeden yazarken: geçersiz gün → tarayıcı value'yu boşaltır ama badInput olur
+  inputEl.addEventListener('input', function() {
+    // validity.badInput: geçersiz/eksik giriş (31 Nisan gibi)
+    if (inputEl.validity && inputEl.validity.badInput) {
+      showWarn('⚠ Geçersiz tarih — bu ayda o gün yok, kontrol edin');
+    } else if (inputEl.value && !isValidDateStr(inputEl.value)) {
+      showWarn('⚠ Geçersiz tarih');
+    } else {
+      clearWarn();
+    }
+  });
+  inputEl.addEventListener('blur', function() {
+    if (inputEl.validity && inputEl.validity.badInput) {
+      showWarn('⚠ Geçersiz tarih girdiniz — lütfen düzeltin');
+    }
+  });
+}
+
+// Bir modal/alan grubundaki tüm date input'larına watcher bağla
+function attachDateWatchers(container) {
+  const scope = container || document;
+  scope.querySelectorAll('input[type="date"]').forEach(el => watchDateInput(el));
+}
+
 function onInvoiceDateChange() {
   if (invoiceFxManuallyEdited) return;
   const date = document.getElementById('im-date').value;
@@ -7558,10 +7633,61 @@ function renderCariTable() {
 function updateAvansFxHint() {
   const tarih = document.getElementById('av-tarih').value;
   const fxEl = document.getElementById('av-fx');
-  if (fxEl && !fxEl.value && tarih) {
-    const m = tarih.substring(0, 7);
-    const fx = getFxForMonth ? getFxForMonth(m) : getCurrentFx();
-    if (fx) fxEl.value = fmtNum(fx, 2);
+  if (!fxEl || !tarih) return;
+  // Kur alanı boşsa otomatik öner
+  if (!fxEl.value) {
+    const info = getFxForDateWithSource(tarih);
+    if (info.exact || info.interpolated) {
+      fxEl.value = fmtNum(info.rate, 4);
+    }
+    // Uyarı göster/temizle
+    showAvansFxWarning(info);
+  }
+}
+
+// Kur ve kaynağını birlikte döndür (tam eşleşme / interpolasyon / aralık dışı / yok)
+function getFxForDateWithSource(dateStr) {
+  const daily = (state.settings.dailyFx || [])
+    .filter(d => d.date && parseDecimal(d.rate) > 0)
+    .map(d => ({ date: new Date(d.date), dateStr: d.date, rate: parseDecimal(d.rate) }))
+    .filter(d => !isNaN(d.date.getTime()))
+    .sort((a, b) => a.date - b.date);
+  if (daily.length === 0) return { rate: getFxForDate(dateStr), exact: false, interpolated: false, outOfRange: false, noData: true };
+  const target = new Date(dateStr);
+  const exact = daily.find(d => d.dateStr === dateStr);
+  if (exact) return { rate: exact.rate, exact: true, interpolated: false, outOfRange: false, noData: false };
+  if (target < daily[0].date || target > daily[daily.length-1].date) {
+    return { rate: getFxForDate(dateStr), exact: false, interpolated: false, outOfRange: true, noData: false,
+             rangeStart: daily[0].dateStr, rangeEnd: daily[daily.length-1].dateStr };
+  }
+  return { rate: getFxForDate(dateStr), exact: false, interpolated: true, outOfRange: false, noData: false };
+}
+
+function showAvansFxWarning(info) {
+  const fxEl = document.getElementById('av-fx');
+  if (!fxEl) return;
+  let warn = fxEl.parentElement.querySelector('.fx-warn');
+  const setWarn = (msg, color) => {
+    if (!warn) {
+      warn = document.createElement('div');
+      warn.className = 'fx-warn';
+      warn.style.cssText = 'font-size:11px;margin-top:3px;';
+      fxEl.parentElement.appendChild(warn);
+    }
+    warn.textContent = msg;
+    warn.style.color = color;
+  };
+  const clearWarn = () => { if (warn) warn.remove(); };
+  if (info.noData) {
+    setWarn('⚠ Günlük kur tablosu boş — kuru elle girin (Ayarlar → Günlük Kur)', '#a44132');
+  } else if (info.outOfRange) {
+    setWarn(`⚠ Bu tarih kur tablosu dışında (${info.rangeStart} – ${info.rangeEnd}) — en yakın kur önerildi, kontrol edin`, '#a44132');
+  } else if (info.interpolated) {
+    setWarn('ℹ️ İki tarih arası hesaplandı (interpolasyon)', 'var(--text-muted)');
+  } else if (info.exact) {
+    setWarn('✓ Kur tablosundan alındı', '#2f6b48');
+  } else {
+    clearWarn();
   }
 }
 
@@ -9397,6 +9523,7 @@ async function _bna_init() {
   updateLockUI();
   applyLockUI();
   updateStorageIndicator();
+  attachDateWatchers();  // tüm tarih alanlarına geçersiz-tarih uyarısı bağla
   const bb = document.getElementById('buildBadge');
   if (bb) bb.textContent = APP_BUILD;
   // KDV sütunları varsayılan gizli
