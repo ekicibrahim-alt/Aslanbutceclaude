@@ -1976,7 +1976,7 @@ body.view-mode .lock-status * {
           </select>
         </div>
       </div>
-      <div id="im-installmentRows">
+      <div id="im-installmentRows" style="overflow-x: auto;">
         <!-- Dinamik taksit satırları -->
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 20px; margin-top: 8px; font-size: 13px;">
@@ -2139,7 +2139,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v5.9 (24.08)';
+const APP_BUILD = 'v6.0 (24.08)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -6301,38 +6301,38 @@ function renderInstallmentRows() {
     const isPaid = inst.status === 'paid';
     const remaining = (inst.amount || 0) - (inst.paidAmount || 0);
     const div = document.createElement('div');
-    div.style.cssText = 'display: grid; grid-template-columns: 30px 130px 1fr 1fr 130px 1fr 100px; gap: 8px; align-items: center; margin-bottom: 8px; padding: 8px; background: ' + (isPaid ? 'rgba(47,107,72,0.08)' : 'white') + '; border: 1px solid var(--border); border-radius: 6px;';
+    div.style.cssText = 'display: grid; grid-template-columns: 28px 125px 130px 130px 125px 110px 90px; gap: 8px; align-items: center; margin-bottom: 8px; padding: 8px; min-width: 760px; background: ' + (isPaid ? 'rgba(47,107,72,0.08)' : 'white') + '; border: 1px solid var(--border); border-radius: 6px;';
     div.innerHTML = `
       <span style="font-weight: 600; color: var(--text-muted); font-size: 12px;">#${idx + 1}</span>
       <div>
         <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">Vade Tarihi</div>
-        <input type="date" value="${inst.dueDate || ''}" onchange="invoiceInstallments[${idx}].dueDate = this.value" style="font-size: 12px; padding: 4px; width: 100%;">
+        <input type="date" value="${inst.dueDate || ''}" onchange="invoiceInstallments[${idx}].dueDate = this.value" style="font-size: 12px; padding: 4px; width: 100%; box-sizing: border-box;">
       </div>
       <div>
         <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">Taksit Tutarı</div>
         <input type="number" step="0.01" value="${inst.amount ? inst.amount.toFixed(2) : '0'}" 
           onchange="invoiceInstallments[${idx}].amount = parseDecimal(this.value); updatePaymentSummary()" 
-          style="font-size: 12px; padding: 4px; width: 100%;">
+          style="font-size: 13px; padding: 6px; width: 100%; box-sizing: border-box; text-align: right;">
       </div>
       <div>
         <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">Ödenen Tutar</div>
         <input type="number" step="0.01" value="${inst.paidAmount ? inst.paidAmount.toFixed(2) : '0'}" 
           onchange="invoiceInstallments[${idx}].paidAmount = parseDecimal(this.value); updatePaymentSummary()" 
-          style="font-size: 12px; padding: 4px; width: 100%;">
+          style="font-size: 13px; padding: 6px; width: 100%; box-sizing: border-box; text-align: right;">
       </div>
       <div>
         <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">Ödeme Tarihi</div>
         <input type="date" value="${inst.paidDate || ''}" 
           onchange="invoiceInstallments[${idx}].paidDate = this.value" 
-          style="font-size: 12px; padding: 4px; width: 100%;">
+          style="font-size: 12px; padding: 4px; width: 100%; box-sizing: border-box;">
       </div>
       <div>
         <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">Kalan</div>
-        <div style="font-size: 13px; font-weight: 600; color: ${remaining > 0.01 ? '#a44132' : '#2f6b48'}; padding: 4px;">${fmtTL(remaining)}</div>
+        <div style="font-size: 13px; font-weight: 600; color: ${remaining > 0.01 ? '#a44132' : '#2f6b48'}; padding: 4px; text-align: right;">${fmtTL(remaining)}</div>
       </div>
       <div>
         <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">Durum</div>
-        <select onchange="onInstallmentStatusChange(${idx}, this.value)" style="font-size: 12px; padding: 4px;">
+        <select onchange="onInstallmentStatusChange(${idx}, this.value)" style="font-size: 12px; padding: 4px; width: 100%; box-sizing: border-box;">
           <option value="pending" ${inst.status !== 'paid' ? 'selected' : ''}>Bekliyor</option>
           <option value="paid" ${inst.status === 'paid' ? 'selected' : ''}>Ödendi</option>
         </select>
