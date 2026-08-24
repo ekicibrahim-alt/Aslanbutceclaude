@@ -666,6 +666,7 @@ body.view-mode .lock-status * {
 <div class="app-shell">
 
   <!-- DÜZENLEME KİLİDİ BANNER -->
+  <div id="firebaseSyncWarning" style="display:none;"></div>
   <div id="lockBanner" style="display:none;"></div>
 
   <!-- HEADER -->
@@ -2138,7 +2139,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v5.7 (24.08)';
+const APP_BUILD = 'v5.8 (24.08)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -2746,6 +2747,53 @@ function sanitizeFirebaseKey(key) {
   return key.replace(/[.#$\[\]\/]/g, '_');
 }
 
+// ── FIREBASE SENKRON DURUMU (sessiz veri ayrışmasını önle) ──
+let firebaseSyncOk = true;
+function setFirebaseSyncStatus(ok, errMsg) {
+  firebaseSyncOk = ok;
+  const el = document.getElementById('firebaseSyncWarning');
+  if (!el) return;
+  if (ok) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+  } else {
+    el.style.display = 'block';
+    el.innerHTML = `
+      <div style="background:#a44132;color:#fff;padding:10px 20px;text-align:center;font-size:13px;font-weight:600;">
+        ⚠ Veriler buluta (Firebase) kaydedilemiyor — bu cihazda yerel olarak tutuluyor, EKİPLE PAYLAŞILMIYOR.
+        <br><span style="font-weight:400;font-size:12px;">Sebep: ${escapeHtml(errMsg || 'bağlantı/izin sorunu')}. İnternet bağlantısını kontrol et. Önemli veriyi Excel'e aktararak yedekle.</span>
+      </div>`;
+  }
+}
+
+// ── OTOMATİK YEREL YEDEK (son 5 sürümü sakla, veri kaybına karşı) ──
+function autoLocalBackup(value) {
+  try {
+    const stamp = new Date().toISOString();
+    // Son yedekleri al
+    let backups = [];
+    try { backups = JSON.parse(localStorage.getItem('bna_backups') || '[]'); } catch(e) { backups = []; }
+    // Aynı içerik peş peşe yedeklenmesin (değişmediyse atla)
+    if (backups.length > 0 && backups[backups.length-1].data === value) return;
+    backups.push({ stamp, data: value });
+    // Son 5 yedeği tut (yer kaplamasın)
+    while (backups.length > 5) backups.shift();
+    localStorage.setItem('bna_backups', JSON.stringify(backups));
+  } catch(e) { /* localStorage dolu olabilir, sessiz geç */ }
+}
+
+// Yedekleri listele/geri yükle (konsoldan erişilebilir acil kurtarma)
+function listLocalBackups() {
+  try {
+    const backups = JSON.parse(localStorage.getItem('bna_backups') || '[]');
+    return backups.map((b, i) => {
+      let projeler = [];
+      try { projeler = Object.values(JSON.parse(b.data).projects).map(p => p.settings.projectName); } catch(e) {}
+      return { index: i, tarih: b.stamp, projeler };
+    });
+  } catch(e) { return []; }
+}
+
 // Persistent storage: Firebase öncelikli, localStorage yedek
 const persistentStorage = {
   async get(key) {
@@ -2776,9 +2824,13 @@ const persistentStorage = {
         await firebaseDb.ref('data/' + fbKey).set(value);
         // Aynı anda localStorage'a da yaz (çevrimdışı yedek)
         try { localStorage.setItem(key, value); } catch(e) {}
+        // Yazma başarılı → uyarıyı temizle
+        if (key === APP_KEY) setFirebaseSyncStatus(true);
         return { key, value, shared: true };
       } catch (e) {
         console.warn('Firebase yazma hatası, localStorage fallback:', e);
+        // Ana veri Firebase'e yazılamadı → KULLANICIYI UYAR (sessiz ayrışmayı önle)
+        if (key === APP_KEY) setFirebaseSyncStatus(false, e.message);
       }
     }
     // 2) localStorage fallback
@@ -3002,6 +3054,37 @@ async function loadApp() {
   }
 
   if (localData) {
+    // ── VERİ KAYBI KORUMASI ──
+    // Firebase'den gelen veri, bu cihazın localStorage'ındakinden AZ proje içeriyorsa
+    // (örn. başka cihaz eksik veri yazmış), otomatik kabul etme — kullanıcıyı uyar.
+    try {
+      const rawLocal = localStorage.getItem(APP_KEY);
+      if (rawLocal && firebaseDb) {
+        const localOnly = JSON.parse(rawLocal);
+        const remoteCount = localData.projects ? Object.keys(localData.projects).length : 0;
+        const localCount = localOnly.projects ? Object.keys(localOnly.projects).length : 0;
+        // Yerel'de belirgin şekilde daha fazla proje varsa (kayıp riski)
+        if (localCount > remoteCount && localCount > 0) {
+          const remoteNames = localData.projects ? Object.values(localData.projects).map(p => p.settings?.projectName || '?').join(', ') : '(yok)';
+          const localNames = Object.values(localOnly.projects).map(p => p.settings?.projectName || '?').join(', ');
+          const keepLocal = confirm(
+            `⚠ VERİ FARKI TESPİT EDİLDİ\n\n` +
+            `Bulutta (Firebase) ${remoteCount} proje var: ${remoteNames}\n` +
+            `Bu cihazda ${localCount} proje var: ${localNames}\n\n` +
+            `Bu cihazda daha fazla proje var — bulut eksik olabilir.\n\n` +
+            `• TAMAM → Bu cihazdaki (dolu) veriyi KULLAN ve buluta yükle\n` +
+            `• İPTAL → Buluttaki (eksik olabilir) veriyi kullan\n\n` +
+            `Veri kaybını önlemek için genelde TAMAM önerilir.`
+          );
+          if (keepLocal) {
+            localData = localOnly;
+            // Dolu veriyi buluta geri yaz
+            setTimeout(() => { try { firebaseDb.ref('data/' + sanitizeFirebaseKey(APP_KEY)).set(rawLocal); } catch(e){} }, 500);
+          }
+        }
+      }
+    } catch(e) { /* karşılaştırma başarısızsa normal devam */ }
+
     app = normalizeApp(localData);
     loadedAppStamp = app.meta && app.meta.savedAt ? app.meta.savedAt : 0;
     loadActiveProject();
@@ -3066,7 +3149,9 @@ async function saveApp(opts) {
   loadedAppStamp = app.meta.savedAt;
 
   try {
-    await persistentStorage.set(APP_KEY, JSON.stringify(app));
+    const serialized = JSON.stringify(app);
+    autoLocalBackup(serialized);  // her kaydetmede son 5 sürümü sakla
+    await persistentStorage.set(APP_KEY, serialized);
   } catch (e) {
     console.error('Kayıt başarısız', e);
     alert('⚠ Veri kaydedilemedi: ' + (e.message || 'Bilinmeyen hata') + '\n\nTarayıcı depolama dolu olabilir, ya da gizli/incognito modunda olabilirsin. Veriyi JSON olarak dışa aktarmanı öneririm.');
