@@ -700,6 +700,7 @@ body.view-mode .lock-status * {
         <span id="storageIndicator" class="storage-indicator" title="Verilerin nereye kaydedildiğini gösterir"><span class="dot"></span><span id="storageMode">—</span></span>
         <span id="lockStatus" class="lock-status locked" onclick="toggleEditMode()" title="Düzenleme kilidi"><span class="icon">🔒</span><span id="lockLabel">Sadece Görüntüleme</span></span>
         <button class="btn btn-ghost" onclick="exportXlsx()" title="Tüm sekmeleri (bütçe, fatura, ödeme planı, nakit akış, iş programı, tahsilat, cari, kesinti, teminat, özet) formatlı Excel olarak indir">📊 Excel</button>
+        <button class="btn btn-ghost" onclick="exportBulkTemplate()" title="Toplu veri girişi için boş şablon indir (faturalar, kesintiler, KDV, taksitler, bütçe ayrı sayfalarda)">📋 Toplu Şablon</button>
         <button class="btn btn-ghost" onclick="document.getElementById('xlsxImportInput').click()" title="Düzenlediğin Excel'i geri yükle (düzenleme yetkisi gerek)">📤 İçe Aktar</button>
         <input type="file" id="xlsxImportInput" style="display:none" accept=".xlsx,.xls" onchange="importXlsx(event)">
         <button class="btn btn-ghost view-allowed" onclick="printReport()" title="Yazdır">🖨️ Yazdır</button>
@@ -2159,7 +2160,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v6.7 (24.08)';
+const APP_BUILD = 'v6.8 (24.08)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -7409,6 +7410,371 @@ function closeInvoiceViewModal() {
 // ============================================================
 // EXCEL İMPORT (round-trip)
 // ============================================================
+// ── TOPLU GİRİŞ: Kesinti tipi Türkçe ↔ kod çevirimi ──
+function kesintiTipTR(kod) {
+  return { avans:'Avans Mahsubu', teminat:'Teminat', yansitma:'Yansıtma', ceza:'Ceza' }[kod] || kod;
+}
+function kesintiTipKod(tr) {
+  const t = String(tr || '').trim().toLowerCase();
+  if (t.includes('avans') || t.includes('mahsup')) return 'avans';
+  if (t.includes('teminat')) return 'teminat';
+  if (t.includes('yansıt') || t.includes('yansit') || t.includes('yemek') || t.includes('sigorta') || t.includes('isg') || t.includes('İsg')) return 'yansitma';
+  if (t.includes('ceza') || t.includes('kesinti')) return 'ceza';
+  return 'yansitma'; // varsayılan
+}
+function teminatAltTipKod(tr) {
+  const t = String(tr || '').trim().toLowerCase();
+  if (t.includes('kesin') && t.includes('mektup')) return 'kesin_mektup';
+  if (t.includes('kesin')) return 'kesin_nakit';
+  if (t.includes('geçici') || t.includes('gecici')) return 'gecici_nakit';
+  return 'gecici_nakit';
+}
+function teminatAltTipTR(kod) {
+  return { gecici_nakit:'Geçici Nakit', kesin_nakit:'Kesin Nakit', kesin_mektup:'Kesin Mektup' }[kod] || 'Geçici Nakit';
+}
+
+// ── TOPLU GİRİŞ ŞABLONU: boş, doğru başlıklı çok-sayfalı Excel indir ──
+async function exportBulkTemplate() {
+  if (typeof ExcelJS === 'undefined') { alert('ExcelJS yüklenemedi.'); return; }
+  const wb = new ExcelJS.Workbook();
+  const headerFill = { type:'pattern', pattern:'solid', fgColor:{argb:'FF1E3A5F'} };
+  const headerFont = { bold:true, color:{argb:'FFFFFFFF'}, size:10 };
+  const noteFill = { type:'pattern', pattern:'solid', fgColor:{argb:'FFFDF3E1'} };
+
+  const styleHeader = (ws) => {
+    ws.getRow(1).eachCell(c => { c.fill=headerFill; c.font=headerFont; c.alignment={horizontal:'center',vertical:'middle',wrapText:true}; });
+    ws.getRow(1).height = 26;
+  };
+
+  // 1) FATURALAR
+  const wsF = wb.addWorksheet('Faturalar');
+  wsF.columns = [
+    {header:'Fatura No*', key:'no', width:16},
+    {header:'Firma (Cari)*', key:'cari', width:22},
+    {header:'Hesap Kodu', key:'kod', width:20},
+    {header:'Fatura Tarihi', key:'tarih', width:14},
+    {header:'Vade Tarihi', key:'vade', width:14},
+    {header:'Tip', key:'tip', width:16},
+    {header:'Açıklama', key:'acik', width:28},
+    {header:'Net Tutar (TL)', key:'net', width:16},
+    {header:'Stopaj %', key:'stopaj', width:10},
+    {header:'Tevkifat %', key:'tevkifat', width:11},
+    {header:'Kur (USD/TRY)', key:'kur', width:13}
+  ];
+  styleHeader(wsF);
+  // Örnek satır
+  const exF = wsF.addRow(['ABC2026-1','TÜRKENER','150.02.001','2026-01-15','2026-02-15','Taşeron Hakedişi','1.NOLU HAKEDİŞ',1000000,5,8,'']);
+  exF.eachCell(c => { c.fill=noteFill; c.font={italic:true,size:10,color:{argb:'FF6A655C'}}; });
+
+  // 2) KDV (fatura no + firma ile eşleşir, çok oranlı destekli)
+  const wsK = wb.addWorksheet('KDV');
+  wsK.columns = [
+    {header:'Fatura No*', key:'no', width:16},
+    {header:'Firma (Cari)*', key:'cari', width:22},
+    {header:'KDV Oranı (%)', key:'oran', width:13},
+    {header:'KDV Tutarı (TL)', key:'tutar', width:15}
+  ];
+  styleHeader(wsK);
+  const exK = wsK.addRow(['ABC2026-1','TÜRKENER',20,200000]);
+  exK.eachCell(c => { c.fill=noteFill; c.font={italic:true,size:10,color:{argb:'FF6A655C'}}; });
+
+  // 3) KESİNTİLER
+  const wsKes = wb.addWorksheet('Kesintiler');
+  wsKes.columns = [
+    {header:'Fatura No*', key:'no', width:16},
+    {header:'Firma (Cari)*', key:'cari', width:22},
+    {header:'Kesinti Tipi*', key:'tip', width:18},
+    {header:'Alt Tip (teminat için)', key:'alt', width:18},
+    {header:'Açıklama', key:'acik', width:24},
+    {header:'Tutar (TL)', key:'tutar', width:14}
+  ];
+  styleHeader(wsKes);
+  const exKes1 = wsKes.addRow(['ABC2026-1','TÜRKENER','Teminat','Kesin Nakit','Kesin teminat',50000]);
+  const exKes2 = wsKes.addRow(['ABC2026-1','TÜRKENER','Yansıtma','','Yemek bedeli',10000]);
+  [exKes1,exKes2].forEach(r => r.eachCell(c => { c.fill=noteFill; c.font={italic:true,size:10,color:{argb:'FF6A655C'}}; }));
+
+  // 4) TAKSİTLER / ÖDEMELER
+  const wsT = wb.addWorksheet('Taksitler');
+  wsT.columns = [
+    {header:'Fatura No*', key:'no', width:16},
+    {header:'Firma (Cari)*', key:'cari', width:22},
+    {header:'Vade Tarihi', key:'vade', width:14},
+    {header:'Taksit Tutarı (TL)', key:'tutar', width:16},
+    {header:'Ödenen (TL)', key:'oden', width:14},
+    {header:'Ödeme Tarihi', key:'odeTarih', width:14}
+  ];
+  styleHeader(wsT);
+  const exT = wsT.addRow(['ABC2026-1','TÜRKENER','2026-02-15',800000,800000,'2026-02-16']);
+  exT.eachCell(c => { c.fill=noteFill; c.font={italic:true,size:10,color:{argb:'FF6A655C'}}; });
+
+  // 5) BÜTÇE (opsiyonel toplu bütçe girişi)
+  const wsB = wb.addWorksheet('Bütçe');
+  wsB.columns = [
+    {header:'Hesap Kodu*', key:'kod', width:20},
+    {header:'Seviye', key:'sev', width:8},
+    {header:'Kalem Adı*', key:'ad', width:26},
+    {header:'Tedarikçi', key:'ted', width:20},
+    {header:'Tip', key:'tip', width:16},
+    {header:'Miktar', key:'mik', width:10},
+    {header:'Birim', key:'bir', width:10},
+    {header:'Birim Fiyat', key:'bf', width:14},
+    {header:'Para Birimi', key:'para', width:12}
+  ];
+  styleHeader(wsB);
+  const exB = wsB.addRow(['150.02.001',5,'154KV Hat İşleri','TÜRKENER','Taşeron Hakedişi',1,'ad',5000000,'TRY']);
+  exB.eachCell(c => { c.fill=noteFill; c.font={italic:true,size:10,color:{argb:'FF6A655C'}}; });
+
+  // AÇIKLAMA sayfası
+  const wsInfo = wb.addWorksheet('AÇIKLAMA');
+  wsInfo.columns = [{width:100}];
+  const info = [
+    '📋 TOPLU VERİ GİRİŞ ŞABLONU — Kullanım Kılavuzu',
+    '',
+    '• Yıldızlı (*) sütunlar ZORUNLUDUR.',
+    '• Faturalar, Kesintiler, KDV ve Taksitler sayfaları "Fatura No + Firma" ile birbirine bağlanır.',
+    '   → Aynı faturaya ait kesinti/kdv/taksit satırlarında Fatura No ve Firma AYNI yazılmalı.',
+    '',
+    '• KESİNTİ TİPİ: "Avans Mahsubu", "Teminat", "Yansıtma", "Ceza" yazın (Türkçe).',
+    '   → Yansıtma için açıklamaya "Yemek", "Sigorta", "İSG" gibi yazabilirsiniz.',
+    '   → Teminat için ALT TİP: "Geçici Nakit", "Kesin Nakit" veya "Kesin Mektup".',
+    '',
+    '• KDV: Bir faturanın birden çok KDV oranı varsa, KDV sayfasına o fatura için birden çok satır ekleyin.',
+    '   → Tek oran varsa tek satır yeterli.',
+    '',
+    '• TAKSİT: Taksit satırı eklemezseniz, fatura tek taksit (tam tutar, ödenmemiş) sayılır.',
+    '   → Ödendiyse "Ödenen" ve "Ödeme Tarihi" doldurun.',
+    '',
+    '• KESİNTİ yoksa: Kesintiler sayfasına o fatura için satır eklemeyin (kesintisiz olur).',
+    '',
+    '• Tarih formatı: YYYY-AA-GG (ör. 2026-01-15) veya Excel tarih hücresi.',
+    '',
+    '• IMPORT: "İçe Aktar" ile bu dosyayı yükleyin. Sistem "Toplu Giriş" olarak algılar.',
+    '   → Fatura No+Firma eşleşen kayıtlar GÜNCELLENİR, yeniler EKLENİR, Excel\'de olmayanlar KORUNUR.',
+    '',
+    '• Gri/italik örnek satırları SİLİN, kendi verinizi girin.'
+  ];
+  info.forEach((line, i) => {
+    const r = wsInfo.addRow([line]);
+    if (i === 0) { r.font = { bold:true, size:13, color:{argb:'FF1E3A5F'} }; r.height = 22; }
+    else if (line.startsWith('•')) r.font = { bold:true, size:10 };
+    else r.font = { size:10, color:{argb:'FF4A4A4A'} };
+  });
+
+  // İmza sayfası — import'un "toplu giriş" olduğunu anlaması için
+  const wsSig = wb.addWorksheet('_TOPLU');
+  wsSig.state = 'veryHidden';
+  wsSig.getCell('A1').value = 'BNA_BULK_INPUT_V1';
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `toplu_giris_sablonu_${(state.settings.projectName||'proje').replace(/[^a-z0-9]/gi,'_')}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── TOPLU GİRİŞ İŞLEME ──
+// Faturalar + KDV + Kesintiler + Taksitler + Bütçe sayfalarını okuyup
+// "Fatura No + Firma" ile birleştirir. Ekle/güncelle mantığı.
+async function importBulkData(wb, event) {
+  // Yardımcılar
+  const sheetRows = (name) => {
+    if (!wb.SheetNames.includes(name)) return [];
+    return XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, blankrows: false });
+  };
+  const S = (v) => String(v == null ? '' : v).trim();
+  const N = (v) => {
+    if (v == null || v === '') return 0;
+    if (typeof v === 'number') return v;
+    return parseDecimal(v);
+  };
+  const toISO = (v) => {
+    if (v == null || v === '') return '';
+    if (v instanceof Date && !isNaN(v)) {
+      const y = v.getFullYear(), m = String(v.getMonth()+1).padStart(2,'0'), d = String(v.getDate()).padStart(2,'0');
+      return `${y}-${m}-${d}`;
+    }
+    const s = S(v);
+    // GG.AA.YYYY
+    const m = s.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})$/);
+    if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+    // YYYY-AA-GG
+    if (/^\d{4}-\d{1,2}-\d{1,2}/.test(s)) {
+      const p = s.split('-');
+      return `${p[0]}-${p[1].padStart(2,'0')}-${p[2].substring(0,2).padStart(2,'0')}`;
+    }
+    return s;
+  };
+  const eş = (no, cari) => S(no).toLowerCase() + '||' + S(cari).toLowerCase();
+
+  // ── 1) FATURALAR sayfası ──
+  const fRows = sheetRows('Faturalar');
+  if (fRows.length < 2) {
+    alert('Toplu giriş: "Faturalar" sayfası boş veya bulunamadı. En az bir fatura satırı gerekli.');
+    event.target.value = '';
+    return;
+  }
+  // Başlık satırını atla (index 0). Örnek/gerçek satırları oku.
+  const faturaMap = {}; // eş(no,cari) -> fatura taslağı
+  for (let i = 1; i < fRows.length; i++) {
+    const r = fRows[i];
+    if (!r || r.length === 0) continue;
+    const no = S(r[0]), cari = S(r[1]);
+    if (!no || !cari) continue; // zorunlu alanlar boşsa atla
+    faturaMap[eş(no, cari)] = {
+      invoiceNo: no,
+      supplier: cari,
+      code: S(r[2]),
+      date: toISO(r[3]),
+      dueDate: toISO(r[4]),
+      type: findCatKey(S(r[5])) || 'material',
+      typeLabel: S(r[5]),
+      desc: S(r[6]),
+      amount: N(r[7]),
+      stopajRate: N(r[8]),
+      tevkifatRate: N(r[9]),
+      fxRate: N(r[10]) || 0,
+      kdvRows: [],
+      kesintiler: [],
+      installments: []
+    };
+  }
+
+  // ── 2) KDV sayfası ──
+  sheetRows('KDV').slice(1).forEach(r => {
+    if (!r || r.length === 0) return;
+    const key = eş(S(r[0]), S(r[1]));
+    if (!faturaMap[key]) return;
+    const oran = N(r[2]), tutar = N(r[3]);
+    if (oran > 0 || tutar > 0) faturaMap[key].kdvRows.push({ rate: oran, amount: tutar });
+  });
+
+  // ── 3) KESİNTİLER sayfası ──
+  sheetRows('Kesintiler').slice(1).forEach(r => {
+    if (!r || r.length === 0) return;
+    const key = eş(S(r[0]), S(r[1]));
+    if (!faturaMap[key]) return;
+    const tip = kesintiTipKod(S(r[2]));
+    const tutar = N(r[5]);
+    if (tutar <= 0) return;
+    const kesinti = { tip, label: S(r[4]), tutar };
+    if (tip === 'teminat') kesinti.altTip = teminatAltTipKod(S(r[3]));
+    faturaMap[key].kesintiler.push(kesinti);
+  });
+
+  // ── 4) TAKSİTLER sayfası ──
+  sheetRows('Taksitler').slice(1).forEach(r => {
+    if (!r || r.length === 0) return;
+    const key = eş(S(r[0]), S(r[1]));
+    if (!faturaMap[key]) return;
+    const tutar = N(r[3]);
+    if (tutar <= 0) return;
+    const oden = N(r[4]);
+    faturaMap[key].installments.push({
+      dueDate: toISO(r[2]),
+      amount: tutar,
+      paidAmount: oden,
+      paidDate: toISO(r[5]),
+      status: (oden >= tutar - 0.5 && tutar > 0) ? 'paid' : (oden > 0.5 ? 'partial' : 'pending')
+    });
+  });
+
+  // ── Faturaları tamamla (varsayılanlar) ──
+  const yeniFaturalar = Object.values(faturaMap).map(f => {
+    // KDV yoksa %20 varsay
+    if (f.kdvRows.length === 0) f.kdvRows = [{ rate: 20, amount: f.amount * 0.20 }];
+    // Taksit yoksa tek taksit (tam net ödenecek, ödenmemiş)
+    if (f.installments.length === 0) {
+      const kdvTot = f.kdvRows.reduce((s,k)=>s+(k.amount||0),0);
+      const kesTot = f.kesintiler.reduce((s,k)=>s+(k.tutar||0),0);
+      const stopaj = f.amount * (f.stopajRate/100);
+      const tevkifat = kdvTot * (f.tevkifatRate/100);
+      const netOdenecek = f.amount + kdvTot - stopaj - tevkifat - kesTot;
+      f.installments = [{ dueDate: f.dueDate || f.date, amount: netOdenecek, paidAmount: 0, paidDate: '', status: 'pending' }];
+    }
+    if (!f.fxRate) f.fxRate = getFxForDate(f.date) || getCurrentFx();
+    // Durum: tüm taksitler ödendiyse paid
+    const totalPaid = f.installments.reduce((s,t)=>s+(t.paidAmount||0),0);
+    const totalAmt = f.installments.reduce((s,t)=>s+(t.amount||0),0);
+    f.status = (totalPaid >= totalAmt - 0.5 && totalAmt > 0) ? 'paid' : (totalPaid > 0.5 ? 'partial' : 'pending');
+    delete f.typeLabel;
+    return f;
+  });
+
+  // ── 5) BÜTÇE sayfası (opsiyonel) ──
+  const bRows = sheetRows('Bütçe');
+  const yeniButce = [];
+  for (let i = 1; i < bRows.length; i++) {
+    const r = bRows[i];
+    if (!r || r.length === 0) continue;
+    const kod = S(r[0]), ad = S(r[2]);
+    if (!kod || !ad) continue;
+    yeniButce.push({
+      code: kod,
+      level: N(r[1]) || 5,
+      name: ad,
+      supplier: S(r[3]),
+      materialType: (S(r[4]).toLowerCase().includes('taşeron') || S(r[4]).toLowerCase().includes('hakediş')) ? 'subcontractor' : 'material',
+      qty: N(r[5]) || 1,
+      unit: S(r[6]) || 'ad',
+      unitPrice: N(r[7]),
+      currency: (S(r[8]).toUpperCase() === 'USD') ? 'USD' : 'TRY',
+      kdvRate: 20
+    });
+  }
+
+  // ── EKLE/GÜNCELLE: mevcut faturalarla birleştir ──
+  const mevcut = state.invoices || [];
+  let eklenen = 0, guncellenen = 0;
+  yeniFaturalar.forEach(yf => {
+    const idx = mevcut.findIndex(m => eş(m.invoiceNo, m.supplier) === eş(yf.invoiceNo, yf.supplier));
+    if (idx >= 0) {
+      // Güncelle — id'yi koru
+      yf.id = mevcut[idx].id;
+      yf.hasAttachment = mevcut[idx].hasAttachment;
+      mevcut[idx] = yf;
+      guncellenen++;
+    } else {
+      yf.id = 'i_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+      mevcut.push(yf);
+      eklenen++;
+    }
+  });
+  state.invoices = mevcut;
+
+  // Bütçe ekle/güncelle (hesap kodu ile)
+  let bEkle = 0, bGuncelle = 0;
+  if (yeniButce.length > 0) {
+    const mevcutB = state.budget || [];
+    yeniButce.forEach(yb => {
+      const idx = mevcutB.findIndex(m => S(m.code) === S(yb.code));
+      if (idx >= 0) {
+        yb.id = mevcutB[idx].id;
+        yb.revisedBudgetUsd = mevcutB[idx].revisedBudgetUsd;
+        yb.revisedHistory = mevcutB[idx].revisedHistory;
+        mevcutB[idx] = yb;
+        bGuncelle++;
+      } else {
+        yb.id = 'b_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+        mevcutB.push(yb);
+        bEkle++;
+      }
+    });
+    state.budget = mevcutB;
+  }
+
+  applyProjectMigrations(state);
+  await saveState();
+  renderAll();
+  event.target.value = '';
+  let msg = `✓ Toplu giriş tamamlandı:\n\nFATURALAR: ${eklenen} eklendi, ${guncellenen} güncellendi`;
+  if (yeniButce.length > 0) msg += `\nBÜTÇE: ${bEkle} eklendi, ${bGuncelle} güncellendi`;
+  msg += `\n\nKesintiler, KDV ve taksitler ilgili faturalara bağlandı.`;
+  alert(msg);
+}
+
 async function importXlsx(event) {
   if (!requireEdit()) return;
   const file = event.target.files[0];
@@ -7421,6 +7787,18 @@ async function importXlsx(event) {
   try {
     const buffer = await file.arrayBuffer();
     const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+
+    // ── TOPLU GİRİŞ ALGILAMA ──
+    // _TOPLU imza sayfası varsa, bu bir toplu-giriş şablonudur → ayrı işle.
+    let isBulk = false;
+    if (wb.SheetNames.includes('_TOPLU')) {
+      const sigRows = XLSX.utils.sheet_to_json(wb.Sheets['_TOPLU'], { header: 1 });
+      if (sigRows.length > 0 && String(sigRows[0][0] || '').trim() === 'BNA_BULK_INPUT_V1') isBulk = true;
+    }
+    if (isBulk) {
+      await importBulkData(wb, event);
+      return;
+    }
 
     // ── Gizli tam-veri sayfası (_VERI) analizi ──
     // _VERI eksiksiz yedektir. Ama kullanıcı görsel sayfalarda DÜZENLEME yaptıysa,
