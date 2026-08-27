@@ -2159,7 +2159,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v6.6 (24.08)';
+const APP_BUILD = 'v6.7 (24.08)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -7422,7 +7422,10 @@ async function importXlsx(event) {
     const buffer = await file.arrayBuffer();
     const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
 
-    // ── ÖNCELİK: Gizli tam-veri sayfası varsa eksiksiz geri yükle ──
+    // ── Gizli tam-veri sayfası (_VERI) analizi ──
+    // _VERI eksiksiz yedektir. Ama kullanıcı görsel sayfalarda DÜZENLEME yaptıysa,
+    // _VERI eski kalır → değişiklik kaybolur. Bu yüzden hangisinin isteniyor SOR.
+    let veriData = null;
     if (wb.SheetNames.includes('_VERI')) {
       const dataSheet = wb.Sheets['_VERI'];
       const rows = XLSX.utils.sheet_to_json(dataSheet, { header: 1 });
@@ -7431,29 +7434,45 @@ async function importXlsx(event) {
         for (let i = 1; i < rows.length; i++) {
           if (rows[i] && rows[i][0] != null) json += String(rows[i][0]);
         }
-        try {
-          const full = JSON.parse(json);
-          // State'i eksiksiz geri yükle
-          if (full.settings) state.settings = full.settings;
-          state.budget = full.budget || [];
-          state.invoices = full.invoices || [];
-          state.collections = full.collections || [];
-          state.deductions = full.deductions || [];
-          state.teminatMektuplari = full.teminatMektuplari || [];
-          state.avanslar = full.avanslar || [];
-          state.teminatIadeleri = full.teminatIadeleri || [];
-          state.program = full.program || {};
-          applyProjectMigrations(state);
-          await saveState();
-          renderAll();
-          event.target.value = '';
-          alert('✓ Tüm veriler eksiksiz içe aktarıldı (bütçe, revize, iş programı, faturalar, kesintiler, ödemeler, teminatlar, avanslar).');
-          return;
-        } catch (e) {
-          console.warn('_VERI parse hatası, görsel sayfalardan okumaya geçiliyor:', e);
-        }
+        try { veriData = JSON.parse(json); } catch (e) { console.warn('_VERI parse hatası:', e); veriData = null; }
       }
     }
+
+    if (veriData) {
+      // Kullanıcıya sor: yedek geri yükleme mi, yoksa Excel'de düzenleme mi?
+      const duzenlemeVar = confirm(
+        'Bu dosya sistemden indirilen tam bir Excel.\n\n' +
+        '• TAMAM → Excel sayfalarında DEĞİŞİKLİK YAPTIM (bütçe/fatura/tahsilat düzenledim). ' +
+        'Görsel sayfalardaki güncel değerleri al.\n\n' +
+        '• İPTAL → Sadece YEDEĞİ geri yüklüyorum (Excel\'de değişiklik yapmadım). ' +
+        'Tüm veriyi eksiksiz geri yükle (revize geçmişi, kesinti, taksit detayları dahil).\n\n' +
+        'Excel\'de düzenleme yaptıysan TAMAM, sadece yedek geri yüklüyorsan İPTAL seç.'
+      );
+
+      if (!duzenlemeVar) {
+        // YEDEK MODU: _VERI'yi eksiksiz geri yükle
+        if (veriData.settings) state.settings = veriData.settings;
+        state.budget = veriData.budget || [];
+        state.invoices = veriData.invoices || [];
+        state.collections = veriData.collections || [];
+        state.deductions = veriData.deductions || [];
+        state.teminatMektuplari = veriData.teminatMektuplari || [];
+        state.avanslar = veriData.avanslar || [];
+        state.teminatIadeleri = veriData.teminatIadeleri || [];
+        state.program = veriData.program || {};
+        applyProjectMigrations(state);
+        await saveState();
+        renderAll();
+        event.target.value = '';
+        alert('✓ Yedek eksiksiz geri yüklendi (bütçe, revize, iş programı, faturalar, kesintiler, ödemeler, teminatlar, avanslar).');
+        return;
+      }
+      // DÜZENLEME MODU: _VERI'yi taban al, görsel sayfalardaki değişiklikleri üstüne uygula
+      // Böylece kesinti/taksit/revize gibi görsel sayfada olmayan detaylar korunur,
+      // ama kullanıcının Bütçe/Fatura/Tahsilat sayfalarında yaptığı değişiklikler alınır.
+      window._veriTaban = veriData; // aşağıdaki görsel okuma bunu referans alacak
+    }
+
 
     // ── Gizli sayfa yoksa: görsel sayfalardan oku (eski yöntem) ──
     let imported = { budget: 0, invoices: 0, deductions: 0, collections: 0 };
@@ -7504,6 +7523,19 @@ async function importXlsx(event) {
           unit: String(r[6] || '').trim(),
           unitPrice: parseDecimal(r[7]),
           currency: para
+        });
+      }
+      // DÜZENLEME MODU: _VERI'den revize geçmişi ve iç detayları koru
+      if (window._veriTaban && window._veriTaban.budget) {
+        newBudget.forEach(nb => {
+          const eski = window._veriTaban.budget.find(o => o.code === nb.code);
+          if (eski) {
+            // Görsel sayfada olmayan alanları koru
+            if (eski.revisedBudgetUsd != null) nb.revisedBudgetUsd = eski.revisedBudgetUsd;
+            if (eski.revisedHistory) nb.revisedHistory = eski.revisedHistory;
+            if (eski.kdvRate != null) nb.kdvRate = eski.kdvRate;
+            if (eski.id && (eski.id.startsWith('b_') || eski.id.startsWith('tm_'))) nb.id = eski.id;
+          }
         });
       }
       state.budget = newBudget;
@@ -7572,23 +7604,33 @@ async function importXlsx(event) {
         }
         
         const oldInv = idCol ? state.invoices.find(x => x.id === idCol) : null;
+        // DÜZENLEME MODU: _VERI'den bu faturanın tam detayını bul (kesinti/taksit/kdv)
+        // Eşleştirme: fatura no + cari + hesap kodu ile
+        let veriInv = null;
+        if (window._veriTaban && window._veriTaban.invoices) {
+          veriInv = window._veriTaban.invoices.find(o =>
+            (o.invoiceNo || '') === invoiceNo && (o.supplier || '') === supplier && (o.code || '') === code
+          ) || (idCol ? window._veriTaban.invoices.find(o => o.id === idCol) : null);
+        }
         newInvoices.push({
-          id: idCol || ('i_' + Date.now() + '_' + i),
+          id: (veriInv && veriInv.id) || idCol || ('i_' + Date.now() + '_' + i),
           invoiceNo: invoiceNo || '',
           date: dateStr,
           dueDate: dueStr,
           supplier,
           code,
-          type: findCatKey(tipStr) || 'material',
+          type: findCatKey(tipStr) || (veriInv ? veriInv.type : 'material'),
           desc,
           amount: net,
-          kdvRows: [{ rate: 20, amount: net * 0.20 }],
-          fxRate: fx || getCurrentFx(),
-          stopajRate: 0,
-          tevkifatRate: 0,
-          installments: [],
-          status: (durum.toLowerCase().includes('ödendi')) ? 'paid' : 'pending',
-          hasAttachment: oldInv ? oldInv.hasAttachment : false
+          // Detaylar: _VERI'den koru (görsel sayfada yok), yoksa varsayılan
+          kdvRows: veriInv && veriInv.kdvRows ? veriInv.kdvRows : [{ rate: 20, amount: net * 0.20 }],
+          fxRate: fx || (veriInv ? veriInv.fxRate : getCurrentFx()),
+          stopajRate: veriInv ? (veriInv.stopajRate || 0) : 0,
+          tevkifatRate: veriInv ? (veriInv.tevkifatRate || 0) : 0,
+          kesintiler: veriInv && veriInv.kesintiler ? veriInv.kesintiler : [],
+          installments: veriInv && veriInv.installments ? veriInv.installments : [],
+          status: (durum.toLowerCase().includes('ödendi')) ? 'paid' : (veriInv ? veriInv.status : 'pending'),
+          hasAttachment: (veriInv && veriInv.hasAttachment) || (oldInv ? oldInv.hasAttachment : false)
         });
       }
       state.invoices = newInvoices;
@@ -7647,10 +7689,30 @@ async function importXlsx(event) {
       imported.collections = newColl.length;
     }
     
+    // DÜZENLEME MODU: Görsel sayfalarda OLMAYAN verileri _VERI'den koru
+    // (avanslar, teminat iadeleri, teminat mektupları, iş programı — bunların görsel sayfası yok/eksik)
+    if (window._veriTaban) {
+      if (window._veriTaban.avanslar) state.avanslar = window._veriTaban.avanslar;
+      if (window._veriTaban.teminatIadeleri) state.teminatIadeleri = window._veriTaban.teminatIadeleri;
+      if (window._veriTaban.teminatMektuplari) state.teminatMektuplari = window._veriTaban.teminatMektuplari;
+      // İş programı: görsel "İş Programı" sayfası okunmadıysa _VERI'den al
+      if (window._veriTaban.program && (!state.program || Object.keys(state.program).length === 0)) {
+        state.program = window._veriTaban.program;
+      }
+      // settings içindeki dailyFx, kategoriler vb: görsel sayfada yok → _VERI'den koru
+      if (window._veriTaban.settings) {
+        if (window._veriTaban.settings.dailyFx && (!state.settings.dailyFx || state.settings.dailyFx.length === 0)) {
+          state.settings.dailyFx = window._veriTaban.settings.dailyFx;
+        }
+      }
+      delete window._veriTaban; // temizle
+    }
+    applyProjectMigrations(state);
+    
     await saveState();
     renderAll();
     event.target.value = '';
-    alert(`Excel içe aktarıldı:\n- ${imported.budget} bütçe kalemi\n- ${imported.invoices} fatura\n- ${imported.deductions} kesinti\n- ${imported.collections} tahsilat`);
+    alert(`Excel içe aktarıldı:\n- ${imported.budget} bütçe kalemi\n- ${imported.invoices} fatura\n- ${imported.deductions} kesinti\n- ${imported.collections} tahsilat\n\n(Kesinti detayları, taksitler, avanslar ve teminatlar korundu.)`);
   } catch (err) {
     console.error(err);
     alert('Excel okunamadı: ' + err.message);
