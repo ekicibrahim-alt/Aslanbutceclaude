@@ -2160,7 +2160,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v6.8 (24.08)';
+const APP_BUILD = 'v6.9 (24.08)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -7596,6 +7596,15 @@ async function importBulkData(wb, event) {
       const y = v.getFullYear(), m = String(v.getMonth()+1).padStart(2,'0'), d = String(v.getDate()).padStart(2,'0');
       return `${y}-${m}-${d}`;
     }
+    // Excel tarih seri numarası (ör. 45931 = bir tarih). 20000-80000 arası makul tarih aralığı.
+    if (typeof v === 'number' && v > 20000 && v < 80000) {
+      // Excel epoch: 1899-12-30
+      const d = new Date(Math.round((v - 25569) * 86400 * 1000));
+      if (!isNaN(d.getTime())) {
+        const y = d.getUTCFullYear(), mo = String(d.getUTCMonth()+1).padStart(2,'0'), da = String(d.getUTCDate()).padStart(2,'0');
+        return `${y}-${mo}-${da}`;
+      }
+    }
     const s = S(v);
     // GG.AA.YYYY
     const m = s.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})$/);
@@ -7608,6 +7617,19 @@ async function importBulkData(wb, event) {
     return s;
   };
   const eş = (no, cari) => S(no).toLowerCase() + '||' + S(cari).toLowerCase();
+
+  // Kategori etiketini anahtara çevir (yerel — importXlsx'teki ile aynı mantık)
+  const findCatKey = (label) => {
+    if (!label) return '';
+    const lbl = String(label).trim().toLowerCase();
+    const cats = (state.settings && state.settings.categories) || [];
+    const cat = cats.find(c => c.label && c.label.toLowerCase() === lbl);
+    if (cat) return cat.key;
+    if (lbl.includes('malzeme')) return 'material';
+    if (lbl.includes('taşeron') || lbl.includes('taseron') || lbl.includes('hakediş') || lbl.includes('hakedis')) return 'subcontractor';
+    if (lbl.includes('genel')) return 'general';
+    return '';
+  };
 
   // ── 1) FATURALAR sayfası ──
   const fRows = sheetRows('Faturalar');
