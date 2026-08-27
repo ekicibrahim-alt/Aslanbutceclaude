@@ -1862,6 +1862,17 @@ body.view-mode .lock-status * {
 </div>
 
 <!-- INVOICE MODAL -->
+<!-- ÖDEME AYRINTISI MODALI -->
+<div class="modal-overlay" id="paymentDetailModal">
+  <div class="modal" style="max-width: 640px; max-height: 90vh; overflow-y: auto;">
+    <h3 class="modal-title">💰 Ödeme Ayrıntısı</h3>
+    <div id="paymentDetailContent"><!-- dinamik --></div>
+    <div style="display:flex; justify-content:flex-end; margin-top:16px;">
+      <button class="btn btn-ghost" onclick="closePaymentDetail()">Kapat</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="invoiceModal">
   <div class="modal" style="max-width: 860px; max-height: 90vh; overflow-y: auto;">
     <h3 class="modal-title" id="invoiceModalTitle">Fatura / Hakediş Ekle</h3>
@@ -2148,7 +2159,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v6.4 (24.08)';
+const APP_BUILD = 'v6.5 (24.08)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -5301,6 +5312,7 @@ function renderInvoiceTable() {
       <td class="center">${c.installments.length}</td>
       <td class="center">${statusBadge}</td>
       <td class="center">
+        ${c.totalPaid > 0.5 ? `<button class="btn btn-icon btn-ghost" onclick="showPaymentDetail('${inv.id}')" title="Ödeme tarih ve tutarlarını gör" style="color:#2f6b48;">💰 Ödeme</button>` : ''}
         <button class="btn btn-icon btn-ghost" onclick="editInvoice('${inv.id}')">Düzenle</button>
         <button class="btn btn-danger" onclick="deleteInvoice('${inv.id}')">Sil</button>
       </td>
@@ -6131,6 +6143,86 @@ function openInvoiceModal() {
   recalcInvoiceTotals();
   clearInvoiceImage();
   document.getElementById('invoiceModal').classList.add('active');
+}
+
+// ÖDEME AYRINTISI — taksit taksit ödeme tarihi ve tutarı
+function showPaymentDetail(id) {
+  const inv = state.invoices.find(i => i.id === id);
+  if (!inv) return;
+  const c = calcInvoiceTotals(inv);
+  const content = document.getElementById('paymentDetailContent');
+  if (!content) return;
+
+  // Başlık bilgisi
+  let html = `
+    <div style="background:var(--surface-2); border-radius:8px; padding:12px 14px; margin-bottom:16px; font-size:13px;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+        <span style="color:var(--text-muted);">Fatura No / Cari</span>
+        <span style="font-weight:600;">${escapeHtml(inv.invoiceNo || '—')} · ${escapeHtml(inv.supplier || '—')}</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+        <span style="color:var(--text-muted);">Net Ödenecek</span>
+        <span style="font-weight:600;">${fmtTL(c.netOdenecek)}</span>
+      </div>
+      <div style="display:flex; justify-content:space-between;">
+        <span style="color:var(--text-muted);">Toplam Ödenen</span>
+        <span style="font-weight:600; color:#2f6b48;">${fmtTL(c.totalPaid)}</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; margin-top:4px; padding-top:4px; border-top:1px solid var(--border);">
+        <span style="color:var(--text-muted);">Kalan</span>
+        <span style="font-weight:700; color:${c.remaining > 0.5 ? '#a44132' : '#2f6b48'};">${fmtTL(c.remaining)}</span>
+      </div>
+    </div>`;
+
+  // Taksit taksit ödeme tablosu
+  const insts = inv.installments || [];
+  const odenmisInsts = insts.filter(t => (t.paidAmount || 0) > 0.5);
+
+  if (odenmisInsts.length === 0 && insts.length === 0) {
+    // Taksit yok ama ödeme var (tek seferlik) — genel ödeme bilgisi
+    html += `<div style="color:var(--text-muted); font-size:13px; text-align:center; padding:16px;">
+      Taksit planı tanımlanmamış. Toplam ${fmtTL(c.totalPaid)} ödenmiş görünüyor.
+    </div>`;
+  } else {
+    html += `
+      <table style="width:100%; border-collapse:collapse; font-size:13px;">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border-strong);">
+            <th style="padding:8px 6px; text-align:left; font-size:11px; color:var(--text-muted); text-transform:uppercase;">Taksit</th>
+            <th style="padding:8px 6px; text-align:center; font-size:11px; color:var(--text-muted); text-transform:uppercase;">Vade</th>
+            <th style="padding:8px 6px; text-align:right; font-size:11px; color:var(--text-muted); text-transform:uppercase;">Tutar</th>
+            <th style="padding:8px 6px; text-align:center; font-size:11px; color:var(--text-muted); text-transform:uppercase;">Ödeme Tarihi</th>
+            <th style="padding:8px 6px; text-align:right; font-size:11px; color:var(--text-muted); text-transform:uppercase;">Ödenen</th>
+            <th style="padding:8px 6px; text-align:center; font-size:11px; color:var(--text-muted); text-transform:uppercase;">Durum</th>
+          </tr>
+        </thead>
+        <tbody>`;
+    insts.forEach((t, i) => {
+      const paid = t.paidAmount || 0;
+      const amount = t.amount || 0;
+      const kalan = amount - paid;
+      let durumTxt, durumRenk;
+      if (paid >= amount - 0.5 && amount > 0) { durumTxt = 'Ödendi ✓'; durumRenk = '#2f6b48'; }
+      else if (paid > 0.5) { durumTxt = 'Kısmi'; durumRenk = '#7a5a1a'; }
+      else { durumTxt = 'Bekliyor'; durumRenk = 'var(--text-muted)'; }
+      html += `
+        <tr style="border-bottom:1px solid var(--border); ${paid > 0.5 ? 'background:rgba(47,107,72,0.03);' : ''}">
+          <td style="padding:8px 6px; font-weight:600;">#${i + 1}</td>
+          <td style="padding:8px 6px; text-align:center; color:var(--text-muted);">${fmtDate(t.dueDate)}</td>
+          <td style="padding:8px 6px; text-align:right;">${fmtTL(amount)}</td>
+          <td style="padding:8px 6px; text-align:center; color:${paid > 0.5 ? '#2f6b48' : 'var(--text-muted)'};">${paid > 0.5 && t.paidDate ? fmtDate(t.paidDate) : '—'}</td>
+          <td style="padding:8px 6px; text-align:right; font-weight:600; color:${paid > 0.5 ? '#2f6b48' : 'var(--text-muted)'};">${paid > 0.5 ? fmtTL(paid) : '—'}</td>
+          <td style="padding:8px 6px; text-align:center; font-size:12px; color:${durumRenk}; font-weight:600;">${durumTxt}</td>
+        </tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+
+  content.innerHTML = html;
+  document.getElementById('paymentDetailModal').classList.add('active');
+}
+function closePaymentDetail() {
+  document.getElementById('paymentDetailModal').classList.remove('active');
 }
 
 function editInvoice(id) {
