@@ -511,6 +511,7 @@ body.view-mode .lock-status * {
 }
 .row-hidden { display: none !important; }
 .kdv-hidden .kdv-col { display: none; }
+.kes-hidden .kes-col { display: none; }
 .form-row {
   display: grid;
   gap: 12px;
@@ -1063,6 +1064,9 @@ body.view-mode .lock-status * {
       <div class="section-header">
         <h2 class="section-title">Fatura / Hakediş Listesi</h2>
         <div class="section-actions">
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;color:var(--text-muted);">
+            <input type="checkbox" id="kesToggle" onchange="toggleInvoiceKesinti(this.checked)"> Kesinti kırılımı
+          </label>
           <button class="btn btn-ghost" onclick="exportInvoicesCsv()">CSV İndir</button>
           <button class="btn btn-primary" onclick="openInvoiceModal()">+ Fatura Ekle</button>
         </div>
@@ -1090,6 +1094,10 @@ body.view-mode .lock-status * {
               <th class="right">G.Toplam TL</th>
               <th class="right">G.Toplam USD</th>
               <th class="right" style="background:rgba(164,65,50,0.05);" title="Avans mahsubu + teminat + yansıtma kesintileri">Kesinti</th>
+              <th class="right kes-col" style="background:rgba(184,134,61,0.08);font-size:11px;">↳ Avans</th>
+              <th class="right kes-col" style="background:rgba(30,58,95,0.08);font-size:11px;">↳ Teminat</th>
+              <th class="right kes-col" style="background:rgba(47,107,72,0.08);font-size:11px;">↳ Yansıtma</th>
+              <th class="right kes-col" style="background:rgba(164,65,50,0.08);font-size:11px;">↳ Ceza</th>
               <th class="right" style="background:rgba(47,107,72,0.05);" title="Genel toplam − kesintiler (taşerona fiilen ödenecek)">Net Ödenecek</th>
               <th class="right">Ödenen</th>
               <th class="right">Kalan</th>
@@ -2171,7 +2179,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v7.3 (11.09)';
+const APP_BUILD = 'v7.4 (11.09)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -4217,6 +4225,12 @@ function toggleBudgetKdv(v) {
   if (table) table.classList.toggle('kdv-hidden', !v);
 }
 
+// Fatura tablosunda kesinti kırılımı sütunlarını aç/kapa (KDV gibi)
+function toggleInvoiceKesinti(v) {
+  const table = document.getElementById('invoiceMainTable');
+  if (table) table.classList.toggle('kes-hidden', !v);
+}
+
 // Bu bütçe kalemine (kod örtüşmesiyle) bağlı teminat tipli + avans etiketli kesintilerin TL toplamı
 function getBudgetItemTeminatAvansTL(b) {
   const cols = (state.settings.deductionColumns || []).filter(c =>
@@ -5294,7 +5308,7 @@ function renderInvoiceTable() {
   }
 
   // Toplamları biriktir
-  let T = { net:0, kdv:0, stopaj:0, tevkifat:0, grand:0, grandUsd:0, kes:0, netOd:0, oden:0, kalan:0 };
+  let T = { net:0, kdv:0, stopaj:0, tevkifat:0, grand:0, grandUsd:0, kes:0, netOd:0, oden:0, kalan:0, kesAvans:0, kesTeminat:0, kesYansitma:0, kesCeza:0 };
 
   sorted.forEach(inv => {
     const c = calcInvoiceTotals(inv);
@@ -5320,6 +5334,7 @@ function renderInvoiceTable() {
     T.net += c.net; T.kdv += c.kdvTotal; T.stopaj += c.stopajAmount; T.tevkifat += c.tevkifatAmount;
     T.grand += c.grandTotal; T.grandUsd += grandUsd; T.kes += c.kesToplam; T.netOd += c.netOdenecek;
     T.oden += c.totalPaid; T.kalan += c.remaining;
+    T.kesAvans += (c.kesAvans||0); T.kesTeminat += (c.kesTeminat||0); T.kesYansitma += (c.kesYansitma||0); T.kesCeza += (c.kesCeza||0);
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -5336,6 +5351,10 @@ function renderInvoiceTable() {
       <td class="right" style="font-weight:600;">${fmtTL(c.grandTotal)}</td>
       <td class="right" style="color:var(--accent);font-weight:600;">${fmtUSD(grandUsd)}</td>
       <td class="right" style="background:rgba(164,65,50,0.04);color:#a44132;">${c.kesToplam > 0 ? `<span onclick="showKesintiDetail('${inv.id}')" style="cursor:pointer;border-bottom:1px dotted #a44132;" title="Kesinti detayını gör">-${fmtTL(c.kesToplam)} ▾</span>` : '—'}</td>
+      <td class="right kes-col" style="background:rgba(184,134,61,0.05);font-size:12px;">${(c.kesAvans||0) > 0 ? '-'+fmtTL(c.kesAvans) : '—'}</td>
+      <td class="right kes-col" style="background:rgba(30,58,95,0.05);font-size:12px;">${(c.kesTeminat||0) > 0 ? '-'+fmtTL(c.kesTeminat) : '—'}</td>
+      <td class="right kes-col" style="background:rgba(47,107,72,0.05);font-size:12px;">${(c.kesYansitma||0) > 0 ? '-'+fmtTL(c.kesYansitma) : '—'}</td>
+      <td class="right kes-col" style="background:rgba(164,65,50,0.05);font-size:12px;">${(c.kesCeza||0) > 0 ? '-'+fmtTL(c.kesCeza) : '—'}</td>
       <td class="right" style="background:rgba(47,107,72,0.04);color:#2f6b48;font-weight:600;">${fmtTL(c.netOdenecek)}</td>
       <td class="right" style="color:#2f6b48;">${c.totalPaid > 0 ? fmtTL(c.totalPaid) : '—'}</td>
       <td class="right" style="color:${c.remaining > 0.01 ? '#a44132' : '#2f6b48'};">${fmtTL(c.remaining)}</td>
@@ -5364,6 +5383,10 @@ function renderInvoiceTable() {
       <td class="right">${fmtTL(T.grand)}</td>
       <td class="right" style="color:var(--accent);">${fmtUSD(T.grandUsd)}</td>
       <td class="right" style="background:rgba(164,65,50,0.06);color:#a44132;">${T.kes > 0 ? '-' + fmtTL(T.kes) : '—'}</td>
+      <td class="right kes-col" style="background:rgba(184,134,61,0.1);">${T.kesAvans > 0 ? '-'+fmtTL(T.kesAvans) : '—'}</td>
+      <td class="right kes-col" style="background:rgba(30,58,95,0.1);">${T.kesTeminat > 0 ? '-'+fmtTL(T.kesTeminat) : '—'}</td>
+      <td class="right kes-col" style="background:rgba(47,107,72,0.1);">${T.kesYansitma > 0 ? '-'+fmtTL(T.kesYansitma) : '—'}</td>
+      <td class="right kes-col" style="background:rgba(164,65,50,0.1);">${T.kesCeza > 0 ? '-'+fmtTL(T.kesCeza) : '—'}</td>
       <td class="right" style="background:rgba(47,107,72,0.06);color:#2f6b48;">${fmtTL(T.netOd)}</td>
       <td class="right" style="color:#2f6b48;">${T.oden > 0 ? fmtTL(T.oden) : '—'}</td>
       <td class="right" style="color:${T.kalan > 0.01 ? '#a44132' : '#2f6b48'};">${fmtTL(T.kalan)}</td>
@@ -5373,7 +5396,7 @@ function renderInvoiceTable() {
   }
   
   if (sorted.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="17" class="empty-state">Henüz fatura/hakediş kaydı yok</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="24" class="empty-state">Henüz fatura/hakediş kaydı yok</td></tr>';
   }
 }
 
@@ -10644,6 +10667,9 @@ async function _bna_init() {
   // KDV sütunları varsayılan gizli
   const bt = document.querySelector('[data-tab-content="butce"] table.data-table');
   if (bt) bt.classList.add('kdv-hidden');
+  // Fatura kesinti kırılımı sütunları varsayılan gizli
+  const it = document.getElementById('invoiceMainTable');
+  if (it) it.classList.add('kes-hidden');
   console.log('Bütçe & Nakit Akış — build:', APP_BUILD);
   // Vade uyarı kontrolü (bildirim + günde 1 mail)
   setTimeout(checkMektupVadeUyari, 1500);
