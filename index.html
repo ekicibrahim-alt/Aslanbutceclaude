@@ -2160,7 +2160,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v7.1 (11.09)';
+const APP_BUILD = 'v7.2 (11.09)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -5282,6 +5282,9 @@ function renderInvoiceTable() {
     }
   }
 
+  // Toplamları biriktir
+  let T = { net:0, kdv:0, stopaj:0, tevkifat:0, grand:0, grandUsd:0, kes:0, netOd:0, oden:0, kalan:0 };
+
   sorted.forEach(inv => {
     const c = calcInvoiceTotals(inv);
     const typeLabel = getCategoryLabel(inv.type);
@@ -5301,6 +5304,11 @@ function renderInvoiceTable() {
     const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : getCurrentFx();
     const grandUsd = c.grandTotal / invFx;
     const netUsd = c.net / invFx;
+
+    // Toplamlara ekle
+    T.net += c.net; T.kdv += c.kdvTotal; T.stopaj += c.stopajAmount; T.tevkifat += c.tevkifatAmount;
+    T.grand += c.grandTotal; T.grandUsd += grandUsd; T.kes += c.kesToplam; T.netOd += c.netOdenecek;
+    T.oden += c.totalPaid; T.kalan += c.remaining;
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -5331,6 +5339,27 @@ function renderInvoiceTable() {
     `;
     tbody.appendChild(tr);
   });
+
+  // TOPLAM satırı — tablonun en üstüne ekle
+  if (sorted.length > 0) {
+    const totalTr = document.createElement('tr');
+    totalTr.style.cssText = 'background:rgba(30,58,95,0.06);font-weight:700;border-bottom:2px solid var(--border-strong);position:sticky;top:0;';
+    totalTr.innerHTML = `
+      <td class="mono" colspan="6" style="font-weight:700;">TOPLAM (${sorted.length} fatura)</td>
+      <td class="right">${fmtTL(T.net)}</td>
+      <td class="right">${fmtTL(T.kdv)}</td>
+      <td class="right">${T.stopaj > 0 ? fmtTL(T.stopaj) : '—'}</td>
+      <td class="right">${T.tevkifat > 0 ? fmtTL(T.tevkifat) : '—'}</td>
+      <td class="right">${fmtTL(T.grand)}</td>
+      <td class="right" style="color:var(--accent);">${fmtUSD(T.grandUsd)}</td>
+      <td class="right" style="background:rgba(164,65,50,0.06);color:#a44132;">${T.kes > 0 ? '-' + fmtTL(T.kes) : '—'}</td>
+      <td class="right" style="background:rgba(47,107,72,0.06);color:#2f6b48;">${fmtTL(T.netOd)}</td>
+      <td class="right" style="color:#2f6b48;">${T.oden > 0 ? fmtTL(T.oden) : '—'}</td>
+      <td class="right" style="color:${T.kalan > 0.01 ? '#a44132' : '#2f6b48'};">${fmtTL(T.kalan)}</td>
+      <td colspan="4"></td>
+    `;
+    tbody.insertBefore(totalTr, tbody.firstChild);
+  }
   
   if (sorted.length === 0) {
     tbody.innerHTML = '<tr><td colspan="17" class="empty-state">Henüz fatura/hakediş kaydı yok</td></tr>';
