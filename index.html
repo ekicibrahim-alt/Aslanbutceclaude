@@ -2160,7 +2160,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v7.0 (11.09)';
+const APP_BUILD = 'v7.1 (11.09)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -4504,40 +4504,51 @@ function getCurrentFx() {
 // Verilen tarihteki USD/TRY kurunu döndürür
 // Öncelik: 1) dailyFx tablosunda tam eşleşme, 2) iki tarih arası lineer interpolasyon,
 // 3) en yakın tek tarih, 4) çeyreklik projeksiyon (fallback)
+// Kur verisi önbelleği — 1461 kaydı her çağrıda yeniden işlemeyi önler
+let _fxCache = null;
+let _fxCacheKey = null;
+function _getSortedFx() {
+  const raw = state.settings.dailyFx || [];
+  // Önbellek anahtarı: kayıt sayısı + ilk/son kayıt (değişikliği ucuz tespit)
+  const key = raw.length + '|' + (raw.length ? (raw[0].date + raw[0].rate + raw[raw.length-1].date + raw[raw.length-1].rate) : '');
+  if (_fxCache && _fxCacheKey === key) return _fxCache;
+  // Yeniden hesapla ve önbelleğe al
+  _fxCache = raw
+    .filter(d => d.date && parseDecimal(d.rate) > 0)
+    .map(d => ({ t: new Date(d.date).getTime(), rate: parseDecimal(d.rate), ds: d.date }))
+    .filter(d => !isNaN(d.t))
+    .sort((a, b) => a.t - b.t);
+  _fxCacheKey = key;
+  return _fxCache;
+}
+
 function getFxForDate(dateStr) {
   if (!dateStr) return getFxFromQuarterlyFallback(new Date());
-  const target = new Date(dateStr);
-  if (isNaN(target.getTime())) return getFxFromQuarterlyFallback(new Date());
-  
-  const daily = (state.settings.dailyFx || [])
-    .filter(d => d.date && parseDecimal(d.rate) > 0)
-    .map(d => ({ date: new Date(d.date), rate: parseDecimal(d.rate) }))
-    .filter(d => !isNaN(d.date.getTime()))
-    .sort((a, b) => a.date - b.date);
-  
-  if (daily.length === 0) {
-    return getFxFromQuarterlyFallback(target);
-  }
-  
-  // Tam eşleşme
-  const exact = daily.find(d => d.date.toISOString().substring(0, 10) === dateStr);
+  const targetT = new Date(dateStr).getTime();
+  if (isNaN(targetT)) return getFxFromQuarterlyFallback(new Date());
+
+  const daily = _getSortedFx();
+  if (daily.length === 0) return getFxFromQuarterlyFallback(new Date(dateStr));
+
+  // Tam eşleşme (string karşılaştırma — hızlı)
+  const exact = daily.find(d => d.ds === dateStr);
   if (exact) return exact.rate;
-  
-  // Tarih aralık dışında ise en yakın uçtaki değeri ver
-  if (target < daily[0].date) return daily[0].rate;
-  if (target > daily[daily.length - 1].date) return daily[daily.length - 1].rate;
-  
-  // İki tarih arası lineer interpolasyon
-  for (let i = 0; i < daily.length - 1; i++) {
-    if (target >= daily[i].date && target <= daily[i+1].date) {
-      const totalDays = (daily[i+1].date - daily[i].date) / 86400000;
-      const elapsed = (target - daily[i].date) / 86400000;
-      if (totalDays === 0) return daily[i].rate;
-      const fraction = elapsed / totalDays;
-      return daily[i].rate + (daily[i+1].rate - daily[i].rate) * fraction;
-    }
+
+  // Aralık dışı
+  if (targetT < daily[0].t) return daily[0].rate;
+  if (targetT > daily[daily.length - 1].t) return daily[daily.length - 1].rate;
+
+  // İkili arama ile interpolasyon aralığını bul (lineer taramadan çok hızlı)
+  let lo = 0, hi = daily.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (daily[mid].t <= targetT) lo = mid; else hi = mid;
   }
-  return daily[daily.length - 1].rate;
+  const a = daily[lo], b = daily[hi];
+  const totalDays = (b.t - a.t);
+  if (totalDays === 0) return a.rate;
+  const fraction = (targetT - a.t) / totalDays;
+  return a.rate + (b.rate - a.rate) * fraction;
 }
 
 function getFxFromQuarterlyFallback(date) {
@@ -8429,18 +8440,14 @@ function onAvansTarihChange() { updateAvansFxHint(true); }
 
 // Kur ve kaynağını birlikte döndür (tam eşleşme / interpolasyon / aralık dışı / yok)
 function getFxForDateWithSource(dateStr) {
-  const daily = (state.settings.dailyFx || [])
-    .filter(d => d.date && parseDecimal(d.rate) > 0)
-    .map(d => ({ date: new Date(d.date), dateStr: d.date, rate: parseDecimal(d.rate) }))
-    .filter(d => !isNaN(d.date.getTime()))
-    .sort((a, b) => a.date - b.date);
+  const daily = _getSortedFx();
   if (daily.length === 0) return { rate: getFxForDate(dateStr), exact: false, interpolated: false, outOfRange: false, noData: true };
-  const target = new Date(dateStr);
-  const exact = daily.find(d => d.dateStr === dateStr);
+  const targetT = new Date(dateStr).getTime();
+  const exact = daily.find(d => d.ds === dateStr);
   if (exact) return { rate: exact.rate, exact: true, interpolated: false, outOfRange: false, noData: false };
-  if (target < daily[0].date || target > daily[daily.length-1].date) {
+  if (targetT < daily[0].t || targetT > daily[daily.length-1].t) {
     return { rate: getFxForDate(dateStr), exact: false, interpolated: false, outOfRange: true, noData: false,
-             rangeStart: daily[0].dateStr, rangeEnd: daily[daily.length-1].dateStr };
+             rangeStart: daily[0].ds, rangeEnd: daily[daily.length-1].ds };
   }
   return { rate: getFxForDate(dateStr), exact: false, interpolated: true, outOfRange: false, noData: false };
 }
