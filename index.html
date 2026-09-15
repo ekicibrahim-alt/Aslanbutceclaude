@@ -2179,7 +2179,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v8.0 (11.09)';
+const APP_BUILD = 'v8.1 (11.09)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -6411,15 +6411,19 @@ function editInvoice(id) {
   document.getElementById('im-supplier').value = inv.supplier || '';
   document.getElementById('im-code').value = inv.code || '';
   document.getElementById('im-type').value = inv.type || '';
-  document.getElementById('im-fx').value = inv.fxManual ? (inv.fxRate || '') : '';
+  // Kur alanı: faturanın efektif kurunu HER ZAMAN göster (canlı ya da elle).
+  // Boş bırakma — kullanıcı kuru görsün. Elle girilmiş değilse bayrak false kalır (dokununca override eder).
+  const _efx = getInvoiceFx(inv);
+  // im-fx bir number input — virgül kabul etmez, nokta kullan (yoksa boş kalır)
+  document.getElementById('im-fx').value = _efx ? Number(_efx.toFixed(4)) : (inv.fxRate || '');
   document.getElementById('im-desc').value = inv.desc || '';
   document.getElementById('im-amount').value = inv.amount || '';
   const usdEl2 = document.getElementById('im-amount-usd');
-  const _efx = getInvoiceFx(inv);
   if (usdEl2 && inv.amount && _efx) usdEl2.value = fmtNum(inv.amount / _efx, 2);
   document.getElementById('im-stopaj').value = inv.stopajRate || 0;
   document.getElementById('im-tevkifat').value = inv.tevkifatRate || 0;
-  // Elle kur girilmiş faturada bayrağı koru (kaydedince sabit kalsın)
+  // Bayrağı faturanın gerçek durumundan al: sadece elle girilmişse true.
+  // (Alan dolu görünür ama kullanıcı DEĞİŞTİRMEDİKÇE canlı kur korunur.)
   invoiceFxManuallyEdited = !!inv.fxManual;
   
   // KDV satırları yükle (eski format uyumluluğu)
