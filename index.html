@@ -2179,7 +2179,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v7.6 (11.09)';
+const APP_BUILD = 'v7.7 (11.09)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -2916,6 +2916,12 @@ function applyProjectMigrations(p) {
   p.budget = p.budget || [];
   p.invoices = p.invoices || [];
   p.invoices = p.invoices.map(i => ({ ...i, kesintiler: i.kesintiler || [] }));
+  // KUR MANTIĞI (B): fxManual tanımsız olan mevcut faturalar canlı kura döner.
+  // (Eski sistemde fxRate sabitti; artık tarihe göre canlı okunuyor, elle girilenler hariç.)
+  p.invoices = p.invoices.map(i => {
+    if (i.fxManual === undefined) i.fxManual = false;
+    return i;
+  });
   p.collections = p.collections || [];
   p.deductions = p.deductions || [];
   p.program = p.program || {};
@@ -5241,24 +5247,16 @@ function labelCurve(c) {
 // ============================================================
 
 // Bir faturanın hesaplanmış toplamlarını döndürür
-// MELEZ KUR: Ödenmiş faturalar kilitlenmiş kuru (ödeme günü) kullanır.
-// Ödenmemiş faturalar fatura tarihine göre CANLI EVDS kuru okur (tablo güncellenince otomatik değişir).
+// KUR MANTIĞI (B): Faturalar tarihine göre CANLI EVDS kuru okur (tablo güncellenince otomatik değişir).
+// İSTİSNA: Kullanıcı bir faturaya ELLE özel kur girdiyse (fxManual), o sabit kalır.
 function getInvoiceFx(inv) {
   if (!inv) return getCurrentFx();
-  // Ödeme durumunu kontrol et — herhangi bir ödeme yapılmışsa kur kilitlenir
-  const installments = inv.installments || [];
-  const totalPaid = installments.reduce((s, t) => s + (t.paidAmount || 0), 0);
-  const kilitli = totalPaid > 0.5; // ödeme başladıysa kur sabit
-
-  if (kilitli) {
-    // Ödendi → kilitlenmiş kuru kullan (yoksa fatura tarihine düş)
-    if (inv.fxRate && inv.fxRate > 0) return inv.fxRate;
-    return getFxForDate(inv.date) || getCurrentFx();
-  }
-  // Ödenmemiş → fatura tarihine göre canlı kur (EVDS güncellenince otomatik)
+  // Elle özel kur girildiyse → sabit kullan (kullanıcı bilinçli girdi)
+  if (inv.fxManual && inv.fxRate && inv.fxRate > 0) return inv.fxRate;
+  // Aksi halde → fatura tarihine göre canlı kur (EVDS güncellenince otomatik)
   const canli = getFxForDate(inv.date);
   if (canli && canli > 0) return canli;
-  // Kur tablosunda yoksa, elle girilmiş fxRate varsa onu kullan
+  // Kur tablosunda o tarih için hiç veri yoksa: kayıtlı fxRate varsa onu, yoksa güncel kuru kullan
   if (inv.fxRate && inv.fxRate > 0) return inv.fxRate;
   return getCurrentFx();
 }
@@ -6194,18 +6192,12 @@ async function quickToggleInvoiceStatus(id) {
     if (!confirm('Tüm taksitler "Bekliyor" olarak işaretlensin mi?')) return;
     inv.installments = (inv.installments || []).map(t => ({ ...t, status: 'pending', paidAmount: 0, paidDate: '' }));
     inv.status = 'pending';
-    // Ödemesi geri alındı → kur kilidi kalksın, canlı kura dönsün
-    // (elle girilmiş özel kur yoksa temizle; getInvoiceFx tarihten okuyacak)
   } else {
     // Bekliyor/Kısmi'den ödendi'ye çevir — tüm taksitler ödenmiş say
     if (!confirm('Tüm taksitler "Ödendi" olarak işaretlensin mi? Ödenen tutar = taksit tutarı, tarih = bugün olarak kaydedilir.')) return;
     inv.installments = (inv.installments || [{ dueDate: inv.dueDate, amount: c.grandTotal, paidAmount: 0, paidDate: '', status: 'pending' }])
       .map(t => ({ ...t, status: 'paid', paidAmount: t.amount || c.grandTotal / Math.max(1, (inv.installments||[]).length), paidDate: t.paidDate || today }));
     inv.status = 'paid';
-    // Ödendi → kuru kilitle (elle girilmemişse fatura tarihindeki kuru sabitle)
-    if (!inv.fxRate || inv.fxRate <= 0) {
-      inv.fxRate = getFxForDate(inv.date) || getCurrentFx();
-    }
   }
   await saveState();
   renderAll();
@@ -6415,13 +6407,16 @@ function editInvoice(id) {
   document.getElementById('im-supplier').value = inv.supplier || '';
   document.getElementById('im-code').value = inv.code || '';
   document.getElementById('im-type').value = inv.type || '';
-  document.getElementById('im-fx').value = inv.fxRate || '';
+  document.getElementById('im-fx').value = inv.fxManual ? (inv.fxRate || '') : '';
   document.getElementById('im-desc').value = inv.desc || '';
   document.getElementById('im-amount').value = inv.amount || '';
   const usdEl2 = document.getElementById('im-amount-usd');
-  if (usdEl2 && inv.amount && inv.fxRate) usdEl2.value = fmtNum(inv.amount / inv.fxRate, 2);
+  const _efx = getInvoiceFx(inv);
+  if (usdEl2 && inv.amount && _efx) usdEl2.value = fmtNum(inv.amount / _efx, 2);
   document.getElementById('im-stopaj').value = inv.stopajRate || 0;
   document.getElementById('im-tevkifat').value = inv.tevkifatRate || 0;
+  // Elle kur girilmiş faturada bayrağı koru (kaydedince sabit kalsın)
+  invoiceFxManuallyEdited = !!inv.fxManual;
   
   // KDV satırları yükle (eski format uyumluluğu)
   if (inv.kdvRows && inv.kdvRows.length > 0) {
@@ -6821,18 +6816,17 @@ async function saveInvoice() {
     if (existing) inv.hasAttachment = existing.hasAttachment || false;
   }
 
-  // MELEZ KUR KİLİTLEME: Fatura ödendiyse (ödeme varsa), kuru o tarihe göre kilitle.
-  // Kullanıcı elle kur girdiyse ona dokunma. Ödenmemişse fxRate boş kalsın (canlı okunur).
-  const totalPaid = inv.installments.reduce((s, t) => s + (t.paidAmount || 0), 0);
+  // KUR (B mantığı): Kullanıcı kur alanına elle değer girdiyse fxManual=true (sabit kalır).
+  // Boş bıraktıysa fxManual=false → tarihe göre canlı kur okunur (EVDS güncellenince değişir).
   const elleGirilenFx = parseDecimal(document.getElementById('im-fx').value);
-  if (totalPaid > 0.5) {
-    // Ödendi → kur kilitli olmalı. Elle girildiyse onu koru, yoksa fatura tarihinden al.
-    if (!elleGirilenFx || elleGirilenFx <= 0) {
-      inv.fxRate = getFxForDate(date) || getCurrentFx();
-    }
-    // elleGirilenFx varsa zaten inv.fxRate'e yazıldı, dokunma
+  if (elleGirilenFx && elleGirilenFx > 0 && invoiceFxManuallyEdited) {
+    inv.fxRate = elleGirilenFx;
+    inv.fxManual = true;
+  } else {
+    inv.fxManual = false;
+    // fxRate'i referans olarak sakla (kur tablosu boşsa yedek), ama canlı okuma önceliklidir
+    inv.fxRate = elleGirilenFx > 0 ? elleGirilenFx : (getFxForDate(date) || 0);
   }
-  // Ödenmemişse fxRate elle girilen değer olarak kalır (varsa); getInvoiceFx canlı okur
   
   if (editingInvoiceId) {
     const idx = state.invoices.findIndex(i => i.id === editingInvoiceId);
