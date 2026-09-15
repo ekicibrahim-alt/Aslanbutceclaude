@@ -2179,7 +2179,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v7.4 (11.09)';
+const APP_BUILD = 'v7.5 (11.09)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -3160,6 +3160,7 @@ async function loadApp() {
 
 // Aktif projeyi state'e yükle
 function loadActiveProject() {
+  invalidateFxCache(); // proje değişti — kur önbelleğini temizle
   const id = app.meta.activeProjectId;
   if (!id || !app.projects[id]) {
     // Aktif proje yok — listeden ilkini al ya da boş bir tane oluştur
@@ -3201,6 +3202,7 @@ async function saveApp(opts) {
 // Aktif projeyi kaydet — saveState çağrısı her veri değişikliğinde yapılır
 async function saveState() {
   state.lastModified = Date.now();
+  invalidateFxCache(); // veri değişti — kur önbelleğini tazele (kur güncellenmişse yeni değer alınır)
   // projectList'teki lastModified'i güncelle
   const id = app.meta.activeProjectId;
   if (id) {
@@ -4531,19 +4533,19 @@ function getCurrentFx() {
 // 3) en yakın tek tarih, 4) çeyreklik projeksiyon (fallback)
 // Kur verisi önbelleği — 1461 kaydı her çağrıda yeniden işlemeyi önler
 let _fxCache = null;
-let _fxCacheKey = null;
+let _fxCacheVer = -1;
+let _fxDataVersion = 0; // kur tablosu her değiştiğinde artırılır (invalidateFxCache)
+function invalidateFxCache() { _fxDataVersion++; }
 function _getSortedFx() {
+  // Sürüm değişmediyse önbelleği kullan (checksum hesaplama yok — çok hızlı)
+  if (_fxCache && _fxCacheVer === _fxDataVersion) return _fxCache;
   const raw = state.settings.dailyFx || [];
-  // Önbellek anahtarı: kayıt sayısı + ilk/son kayıt (değişikliği ucuz tespit)
-  const key = raw.length + '|' + (raw.length ? (raw[0].date + raw[0].rate + raw[raw.length-1].date + raw[raw.length-1].rate) : '');
-  if (_fxCache && _fxCacheKey === key) return _fxCache;
-  // Yeniden hesapla ve önbelleğe al
   _fxCache = raw
     .filter(d => d.date && parseDecimal(d.rate) > 0)
     .map(d => ({ t: new Date(d.date).getTime(), rate: parseDecimal(d.rate), ds: d.date }))
     .filter(d => !isNaN(d.t))
     .sort((a, b) => a.t - b.t);
-  _fxCacheKey = key;
+  _fxCacheVer = _fxDataVersion;
   return _fxCache;
 }
 
