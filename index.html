@@ -2179,7 +2179,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v7.9 (11.09)';
+const APP_BUILD = 'v8.0 (11.09)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -10704,12 +10704,25 @@ async function _bna_init() {
   applyLockUI();
   updateStorageIndicator();
   attachDateWatchers();  // tüm tarih alanlarına geçersiz-tarih uyarısı bağla
-  // Kur önbelleği/veri açılışta tam oturmamış olabilir → kısa süre sonra bir kez daha çiz.
+  // Kur önbelleği/veri açılışta tam oturmamış olabilir → veri gelene kadar birkaç kez dene.
   // (Kur değerleri ilk açılışta boş görünüp sonra gelme sorununu önler.)
-  setTimeout(() => {
-    invalidateFxCache();
-    try { renderAll(); } catch(e) {}
-  }, 400);
+  {
+    let renderTries = 0;
+    let lastFxCount = (state.settings.dailyFx || []).length;
+    const renderWait = setInterval(() => {
+      renderTries++;
+      const nowCount = (state.settings.dailyFx || []).length;
+      // Kur verisi değiştiyse (geldiyse) ya da her denemede yeniden çiz
+      invalidateFxCache();
+      try { renderAll(); } catch(e) {}
+      // Veri gelmişse ve sabitlenmişse birkaç denemeden sonra dur
+      if (nowCount > 0 && nowCount === lastFxCount && renderTries >= 3) {
+        clearInterval(renderWait);
+      }
+      lastFxCount = nowCount;
+      if (renderTries > 12) clearInterval(renderWait); // ~6 sn sonra kesin dur
+    }, 500);
+  }
   const bb = document.getElementById('buildBadge');
   if (bb) bb.textContent = APP_BUILD;
   // KDV sütunları varsayılan gizli
