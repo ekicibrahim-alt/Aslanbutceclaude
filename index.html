@@ -2179,7 +2179,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v7.5 (11.09)';
+const APP_BUILD = 'v7.6 (11.09)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -3797,7 +3797,7 @@ function getBudgetItemActualGrossUsd(b) {
   const fx = getBudgetItemFx(b);
   return invoices.reduce((sum, inv) => {
     const c = calcInvoiceTotals(inv);
-    const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
+    const invFx = getInvoiceFx(inv);
     const netG = c.net - (c.kesYansitma || 0) - (c.kesCeza || 0);
     const kdvOran = c.net > 0 ? (netG / c.net) : 1;
     return sum + (netG + (c.kdvTotal * kdvOran)) / invFx;
@@ -3906,7 +3906,7 @@ function getBudgetItemAvansMahsupUsd(b) {
   if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemAvansMahsupUsd(leaf), 0);
   const fx = getBudgetItemFx(b);
   return getInvoicesForBudgetItem(b).reduce((sum, inv) => {
-    const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
+    const invFx = getInvoiceFx(inv);
     const m = (inv.kesintiler || []).reduce((s, k) => s + (k.tip === 'avans' ? (k.tutar || 0) : 0), 0);
     return sum + m / invFx;
   }, 0);
@@ -3938,7 +3938,7 @@ function getBudgetItemOdenenUsd(b) {
   let sum = 0;
   getInvoicesForBudgetItem(b).forEach(inv => {
     const c = calcInvoiceTotals(inv);
-    const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
+    const invFx = getInvoiceFx(inv);
     sum += (c.totalPaid || 0) / invFx;
   });
   return sum;
@@ -3960,7 +3960,7 @@ function getBudgetItemActualUsd(b) {
   const fx = getBudgetItemFx(b);
   return invoices.reduce((sum, inv) => {
     const c = calcInvoiceTotals(inv);
-    const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
+    const invFx = getInvoiceFx(inv);
     // Gerçekleşme NET. Yansıtma (başka kaleme) + ceza (tasarruf) taşerona gitmedi → düşülür.
     const netGerceklesme = c.net - (c.kesYansitma || 0) - (c.kesCeza || 0);
     return sum + (netGerceklesme / invFx);
@@ -3994,7 +3994,7 @@ function getBudgetItemYansitilanUsd(b) {
   const invoices = getInvoicesForBudgetItem(b);
   const fx = getBudgetItemFx(b);
   return invoices.reduce((sum, inv) => {
-    const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
+    const invFx = getInvoiceFx(inv);
     return sum + ((calcInvoiceTotals(inv).kesYansitma || 0) / invFx);
   }, 0);
 }
@@ -4094,7 +4094,8 @@ function getActualForCode(codePrefix, targetDate) {
       return invD <= target;
     })
     .reduce((s, inv) => {
-      const usd = (inv.fxRate && inv.fxRate > 0) ? (inv.amount / inv.fxRate) : 0;
+      const ifx = getInvoiceFx(inv);
+      const usd = (ifx && ifx > 0) ? (inv.amount / ifx) : 0;
       return s + usd;
     }, 0);
 }
@@ -4291,7 +4292,7 @@ function computeOverallProgress() {
     if (invD > target) return;
     const c = calcInvoiceTotals(inv);
     faturalananTry += c.net;
-    const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
+    const invFx = getInvoiceFx(inv);
     faturalananUsd += c.net / invFx;
   });
   // NET iş gerçekleşmesi — kalem bazlı fonksiyonlardan (yansıtma+ceza düşülmüş)
@@ -4432,7 +4433,7 @@ function computeCategoryBreakdown() {
     if (invD > target) return;
     const c = calcInvoiceTotals(inv);
     const amtTry = c.net;
-    const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : fx;
+    const invFx = getInvoiceFx(inv);
     const amtUsd = amtTry / invFx;
     const cat = inv.type || 'mixed';
     const tgt = categories[cat] || categories.mixed;
@@ -5240,6 +5241,28 @@ function labelCurve(c) {
 // ============================================================
 
 // Bir faturanın hesaplanmış toplamlarını döndürür
+// MELEZ KUR: Ödenmiş faturalar kilitlenmiş kuru (ödeme günü) kullanır.
+// Ödenmemiş faturalar fatura tarihine göre CANLI EVDS kuru okur (tablo güncellenince otomatik değişir).
+function getInvoiceFx(inv) {
+  if (!inv) return getCurrentFx();
+  // Ödeme durumunu kontrol et — herhangi bir ödeme yapılmışsa kur kilitlenir
+  const installments = inv.installments || [];
+  const totalPaid = installments.reduce((s, t) => s + (t.paidAmount || 0), 0);
+  const kilitli = totalPaid > 0.5; // ödeme başladıysa kur sabit
+
+  if (kilitli) {
+    // Ödendi → kilitlenmiş kuru kullan (yoksa fatura tarihine düş)
+    if (inv.fxRate && inv.fxRate > 0) return inv.fxRate;
+    return getFxForDate(inv.date) || getCurrentFx();
+  }
+  // Ödenmemiş → fatura tarihine göre canlı kur (EVDS güncellenince otomatik)
+  const canli = getFxForDate(inv.date);
+  if (canli && canli > 0) return canli;
+  // Kur tablosunda yoksa, elle girilmiş fxRate varsa onu kullan
+  if (inv.fxRate && inv.fxRate > 0) return inv.fxRate;
+  return getCurrentFx();
+}
+
 function calcInvoiceTotals(inv) {
   const net = inv.amount || 0;
   const kdvRows = inv.kdvRows || [{ rate: inv.vat ? inv.vat * 100 : 20, amount: net * (inv.vat || 0.20) }];
@@ -5328,7 +5351,7 @@ function renderInvoiceTable() {
       statusBadge = `<span class="badge badge-warning" style="cursor:pointer;" onclick="quickToggleInvoiceStatus('${inv.id}')" title="Tıkla → Ödendi yap">Bekliyor →</span>`;
     }
     
-    const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : getCurrentFx();
+    const invFx = getInvoiceFx(inv);
     const grandUsd = c.grandTotal / invFx;
     const netUsd = c.net / invFx;
 
@@ -5486,7 +5509,7 @@ function computeCashflow() {
       const c = calcInvoiceTotals(inv);
       // Taşerona fiilen çıkan nakit = net ödenecek (kesintiler taşerona ödenmez)
       row.actualTry += c.netOdenecek;
-      const invFx = inv.fxRate && inv.fxRate > 0 ? inv.fxRate : row.fx;
+      const invFx = getInvoiceFx(inv);
       row.actualUsd += c.netOdenecek / invFx;
     }
   });
@@ -6171,12 +6194,18 @@ async function quickToggleInvoiceStatus(id) {
     if (!confirm('Tüm taksitler "Bekliyor" olarak işaretlensin mi?')) return;
     inv.installments = (inv.installments || []).map(t => ({ ...t, status: 'pending', paidAmount: 0, paidDate: '' }));
     inv.status = 'pending';
+    // Ödemesi geri alındı → kur kilidi kalksın, canlı kura dönsün
+    // (elle girilmiş özel kur yoksa temizle; getInvoiceFx tarihten okuyacak)
   } else {
     // Bekliyor/Kısmi'den ödendi'ye çevir — tüm taksitler ödenmiş say
     if (!confirm('Tüm taksitler "Ödendi" olarak işaretlensin mi? Ödenen tutar = taksit tutarı, tarih = bugün olarak kaydedilir.')) return;
     inv.installments = (inv.installments || [{ dueDate: inv.dueDate, amount: c.grandTotal, paidAmount: 0, paidDate: '', status: 'pending' }])
       .map(t => ({ ...t, status: 'paid', paidAmount: t.amount || c.grandTotal / Math.max(1, (inv.installments||[]).length), paidDate: t.paidDate || today }));
     inv.status = 'paid';
+    // Ödendi → kuru kilitle (elle girilmemişse fatura tarihindeki kuru sabitle)
+    if (!inv.fxRate || inv.fxRate <= 0) {
+      inv.fxRate = getFxForDate(inv.date) || getCurrentFx();
+    }
   }
   await saveState();
   renderAll();
@@ -6791,6 +6820,19 @@ async function saveInvoice() {
     const existing = state.invoices.find(i => i.id === editingInvoiceId);
     if (existing) inv.hasAttachment = existing.hasAttachment || false;
   }
+
+  // MELEZ KUR KİLİTLEME: Fatura ödendiyse (ödeme varsa), kuru o tarihe göre kilitle.
+  // Kullanıcı elle kur girdiyse ona dokunma. Ödenmemişse fxRate boş kalsın (canlı okunur).
+  const totalPaid = inv.installments.reduce((s, t) => s + (t.paidAmount || 0), 0);
+  const elleGirilenFx = parseDecimal(document.getElementById('im-fx').value);
+  if (totalPaid > 0.5) {
+    // Ödendi → kur kilitli olmalı. Elle girildiyse onu koru, yoksa fatura tarihinden al.
+    if (!elleGirilenFx || elleGirilenFx <= 0) {
+      inv.fxRate = getFxForDate(date) || getCurrentFx();
+    }
+    // elleGirilenFx varsa zaten inv.fxRate'e yazıldı, dokunma
+  }
+  // Ödenmemişse fxRate elle girilen değer olarak kalır (varsa); getInvoiceFx canlı okur
   
   if (editingInvoiceId) {
     const idx = state.invoices.findIndex(i => i.id === editingInvoiceId);
