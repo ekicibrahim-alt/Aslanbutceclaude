@@ -2179,7 +2179,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v7.8 (11.09)';
+const APP_BUILD = 'v7.9 (11.09)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -10704,6 +10704,12 @@ async function _bna_init() {
   applyLockUI();
   updateStorageIndicator();
   attachDateWatchers();  // tüm tarih alanlarına geçersiz-tarih uyarısı bağla
+  // Kur önbelleği/veri açılışta tam oturmamış olabilir → kısa süre sonra bir kez daha çiz.
+  // (Kur değerleri ilk açılışta boş görünüp sonra gelme sorununu önler.)
+  setTimeout(() => {
+    invalidateFxCache();
+    try { renderAll(); } catch(e) {}
+  }, 400);
   const bb = document.getElementById('buildBadge');
   if (bb) bb.textContent = APP_BUILD;
   // KDV sütunları varsayılan gizli
