@@ -2179,7 +2179,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v8.1 (11.09)';
+const APP_BUILD = 'v8.2 (11.09)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -5492,15 +5492,30 @@ function computeCashflow() {
     const prog = state.program[b.id];
     if (!prog || !prog.start || !prog.end) return;
     const itemMonths = getMonthsInRange(prog.start, prog.end);
-    const totalUsd = getBudgetItemTotalUsd(b);
-    const dist = distributeOverCurve(totalUsd, itemMonths.length, prog.curve || 'linear');
-    itemMonths.forEach((m, i) => {
-      const row = data.find(d => d.month === m);
-      if (row) {
-        row.planUsd += dist[i];
-        row.planTry += dist[i] * row.fx;
-      }
-    });
+    if (b.currency === 'TRY') {
+      // TL kalemi: TL tutarını doğrudan aylara dağıt (toplam TL SABİT kalır).
+      // USD sütunu için her ay TL'yi o ayın kuruyla USD'ye çevir.
+      const totalTry = getBudgetItemTotalTry(b);
+      const distTry = distributeOverCurve(totalTry, itemMonths.length, prog.curve || 'linear');
+      itemMonths.forEach((m, i) => {
+        const row = data.find(d => d.month === m);
+        if (row) {
+          row.planTry += distTry[i];
+          row.planUsd += (row.fx > 0 ? distTry[i] / row.fx : 0);
+        }
+      });
+    } else {
+      // USD kalemi: USD tutarını dağıt (toplam USD sabit). TL için her ay o ayın kuru.
+      const totalUsd = getBudgetItemTotalUsd(b);
+      const distUsd = distributeOverCurve(totalUsd, itemMonths.length, prog.curve || 'linear');
+      itemMonths.forEach((m, i) => {
+        const row = data.find(d => d.month === m);
+        if (row) {
+          row.planUsd += distUsd[i];
+          row.planTry += distUsd[i] * row.fx;
+        }
+      });
+    }
   });
   
   // ACTUAL OUTFLOW: faturalar vade tarihine göre — NET ÖDENECEK (kesintiler düşülmüş)
