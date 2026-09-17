@@ -2179,7 +2179,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v8.4 (17.09)';
+const APP_BUILD = 'v8.5 (17.09)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -3306,11 +3306,15 @@ async function switchProject(id) {
   app.meta.activeProjectId = id;
   state = app.projects[id];
   applyProjectMigrations(state);
-  await saveApp();
-  // Yeni proje için kilit al
+  // Aktif proje bilgisini kaydet (sadece meta — hangi projedeyiz). Tüm veriyi ezmemek için
+  // yeni proje için kilit al, kilit alınırsa kaydet.
   try {
     const lockRes = await acquireLock(id);
     lockState.isReadOnly = (lockRes === 'readonly');
+    // Sadece kilidi alabildiysek (düzenleme yetkisi) app'i kaydet — salt-okunur geçişte yazma yapma
+    if (lockRes === 'acquired') {
+      await saveApp();
+    }
   } catch (e) { console.warn('Kilit alınamadı:', e); }
   renderAll();
   applyLockUI();
@@ -3399,8 +3403,8 @@ function renderProjectList() {
       html += '<td>' + lm + '</td>';
       html += '<td class="center">' + (isActive ? '<span class="badge badge-success">Aktif</span>' : '<span style="color: var(--text-muted); font-size: 11px;">Pasif</span>') + '</td>';
       html += '<td class="center">';
-      // Proje geçişi: editMode veya adminMode yeterli
-      if (!isActive) html += '<button class="btn btn-ghost" onclick="switchProject(\'' + p.id + '\')">Geç</button> ';
+      // Proje geçişi: salt-okunur modda bile çalışmalı (geçiş düzenleme değil) → view-allowed
+      if (!isActive) html += '<button class="btn btn-ghost view-allowed" onclick="switchProject(\'' + p.id + '\')">Geç</button> ';
       // Kopyala + Sil: sadece admin
       if (adminMode) {
         html += '<button class="btn btn-ghost" onclick="duplicateProject(\'' + p.id + '\')">Kopyala</button> ';
