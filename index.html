@@ -2179,7 +2179,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v8.2 (11.09)';
+const APP_BUILD = 'v8.4 (17.09)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -2588,8 +2588,8 @@ try {
 // ============================================================
 // DÜZENLEME KİLİDİ (proje bazlı — Excel benzeri tek yazan)
 // ============================================================
-const LOCK_HEARTBEAT_MS = 30000;   // 30 sn'de bir "buradayım" sinyali
-const LOCK_DEAD_MS = 120000;       // 2 dk sinyal yoksa kilit ölü sayılır
+const LOCK_HEARTBEAT_MS = 20000;   // 20 sn'de bir "buradayım" sinyali
+const LOCK_DEAD_MS = 50000;        // 50 sn sinyal yoksa kilit ölü sayılır (biri çıkınca çabuk serbest kalır)
 const CLIENT_ID = 'c_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
 
 let lockState = {
@@ -2736,6 +2736,7 @@ function updateLockBanner() {
           Sen değişiklik yapamazsın; o çıkınca düzenleme açılır.
         </span>
         <button class="btn btn-ghost" style="font-size:11px;padding:3px 10px;" onclick="retryLock()">🔄 Tekrar Dene</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:3px 10px;color:#a44132;border-color:#a44132;" onclick="forceLock()" title="Kilit takılı kaldıysa (kimse düzenlemiyorsa) zorla al">🔓 Kilidi Zorla Al</button>
       </div>`;
   } else {
     el.style.display = 'none';
@@ -2756,6 +2757,34 @@ function showLockFreedBanner() {
       </span>
       <button class="btn btn-primary" style="font-size:12px;padding:4px 14px;" onclick="retryLock()">🔄 Düzenlemeyi Devral</button>
     </div>`;
+}
+
+// Kilidi zorla devral — takılı/ölü kilit için (kullanıcı emin olarak devralır)
+async function forceLock() {
+  const pid = app.meta.activeProjectId;
+  if (!pid) return;
+  if (!confirm(
+    '⚠ KİLİDİ ZORLA AL\n\n' +
+    'Bu projeyi başka biri düzenliyor GÖRÜNÜYOR. Eğer:\n' +
+    '• O kişi gerçekten çalışıyorsa → onun kaydetmemiş değişiklikleri kaybolabilir.\n' +
+    '• Kimse düzenlemiyorsa (kilit takılı kalmış) → güvenle alabilirsin.\n\n' +
+    'Emin misin — kilidi zorla almak istiyor musun?'
+  )) return;
+  if (!firebaseDb) { lockState.hasLock = true; lockState.isReadOnly = false; applyLockUI(); return; }
+  try {
+    // Mevcut kilidi sil ve kendi adına al
+    await firebaseDb.ref(lockPath(pid)).remove();
+    const res = await acquireLock(pid);
+    if (res === 'acquired') {
+      alert('✓ Kilit alındı. Sayfa yenileniyor.');
+      location.reload();
+    } else {
+      alert('Kilit alınamadı — başka biri aynı anda aldı olabilir. Tekrar dene.');
+      updateLockBanner();
+    }
+  } catch (e) {
+    alert('Kilit alınamadı: ' + e.message);
+  }
 }
 
 // Kilidi yeniden almayı dene
