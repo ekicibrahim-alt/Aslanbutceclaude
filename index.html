@@ -2179,7 +2179,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v8.2 (11.09)';
+const APP_BUILD = 'v8.3 (11.09)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -3165,6 +3165,33 @@ async function loadApp() {
 }
 
 // Aktif projeyi state'e yükle
+// ── GLOBAL KUR HAVUZU ──
+// EVDS kurları TÜM projeler için ortaktır (dolar/TL kuru evrensel).
+// Hangi projede girilirse girilsin, app.meta.globalFx'te tutulur ve
+// aktif projenin state.settings.dailyFx'i bu havuza REFERANSLA bağlanır.
+function bindGlobalFx() {
+  if (!app.meta) app.meta = {};
+  // Global havuz yoksa oluştur — mevcut projelerin kurlarını birleştirerek başlat
+  if (!app.meta.globalFx) {
+    const birlesik = {};
+    // Tüm projelerdeki kurları topla (aynı tarih varsa dolu/son olan kazanır)
+    Object.values(app.projects || {}).forEach(p => {
+      ((p.settings && p.settings.dailyFx) || []).forEach(d => {
+        if (d && d.date) {
+          const r = typeof d.rate === 'string' ? parseDecimal(d.rate) : d.rate;
+          if (r > 0) birlesik[d.date] = r;
+        }
+      });
+    });
+    app.meta.globalFx = Object.keys(birlesik).sort().map(date => ({ date, rate: birlesik[date] }));
+  }
+  // Aktif projenin dailyFx'ini global havuza REFERANSLA bağla
+  if (state && state.settings) {
+    state.settings.dailyFx = app.meta.globalFx;
+  }
+  invalidateFxCache();
+}
+
 function loadActiveProject() {
   const id = app.meta.activeProjectId;
   if (!id || !app.projects[id]) {
@@ -3180,12 +3207,12 @@ function loadActiveProject() {
       app.meta.activeProjectId = newId;
       state = app.projects[newId];
     }
-    invalidateFxCache();
+    bindGlobalFx();
     return;
   }
   state = app.projects[id];
   applyProjectMigrations(state);
-  invalidateFxCache(); // migration kur verisini değiştirir → SONRASINDA önbelleği temizle
+  bindGlobalFx(); // kur havuzunu global'e bağla (migration sonrası)
 }
 
 async function saveApp(opts) {
@@ -7214,8 +7241,11 @@ async function removeDailyFx(idx) {
 
 async function clearDailyFx() {
   if (!requireEdit()) return;
-  if (!confirm('TÜM günlük kurlar silinecek. Onaylıyor musun?')) return;
-  state.settings.dailyFx = [];
+  if (!confirm('TÜM günlük kurlar silinecek (bu tüm projeleri etkiler — kurlar ortaktır). Onaylıyor musun?')) return;
+  // Global havuzu yerinde temizle (referansı koru) — tüm projeler etkilenir
+  if (app.meta && app.meta.globalFx) app.meta.globalFx.length = 0;
+  state.settings.dailyFx = app.meta.globalFx;
+  invalidateFxCache();
   await saveState();
   renderSettings();
 }
@@ -8304,10 +8334,15 @@ async function importXlsx(event) {
       if (window._veriTaban.program && (!state.program || Object.keys(state.program).length === 0)) {
         state.program = window._veriTaban.program;
       }
-      // settings içindeki dailyFx, kategoriler vb: görsel sayfada yok → _VERI'den koru
+      // Kur: GLOBAL havuza yaz (tüm projeler ortak). Havuz boşsa _VERI'deki kuru al.
       if (window._veriTaban.settings) {
-        if (window._veriTaban.settings.dailyFx && (!state.settings.dailyFx || state.settings.dailyFx.length === 0)) {
-          state.settings.dailyFx = window._veriTaban.settings.dailyFx;
+        if (window._veriTaban.settings.dailyFx && app.meta && app.meta.globalFx && app.meta.globalFx.length === 0) {
+          // Global havuza yerinde doldur (referansı koru)
+          window._veriTaban.settings.dailyFx.forEach(d => {
+            if (d && d.date) app.meta.globalFx.push({ date: d.date, rate: typeof d.rate === 'string' ? parseDecimal(d.rate) : d.rate });
+          });
+          state.settings.dailyFx = app.meta.globalFx;
+          invalidateFxCache();
         }
       }
       delete window._veriTaban; // temizle
