@@ -2181,7 +2181,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v8.6 (17.09)';
+const APP_BUILD = 'v8.7 (22.09)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -8421,13 +8421,23 @@ function sumKesintiByType(tip, code, supplier) {
 let editingAvansId = null;
 
 function avansMahsupToplam(av) {
-  // Bu avansa ait mahsup: aynı supplier+code faturalarındaki avans kesintileri
+  // Bu avansa ait mahsup: AYNI firma + AYNI hesap kodu faturalarındaki avans kesintileri.
+  // Aynı firma farklı kodlarda farklı işler yapabilir → her kod kendi mahsubunu tutar, karıştırma.
+  const avCode = String(av.code || '').trim();
+  const avSupplier = String(av.supplier || '').trim();
   let sum = 0;
   state.invoices.forEach(inv => {
-    if (av.code && String(inv.code||'') !== av.code && !String(inv.code||'').startsWith(av.code+'.')) {
-      if (inv.supplier !== av.supplier) return;
+    const invCode = String(inv.code || '').trim();
+    const invSupplier = String(inv.supplier || '').trim();
+    // Kod eşleşmesi: tam kod VEYA faturanın kodu avansın alt kalemi
+    const kodEslesir = avCode && (invCode === avCode || invCode.startsWith(avCode + '.') || invCode.startsWith(avCode + '-'));
+    if (avCode) {
+      if (!kodEslesir) return;  // kod varsa: kod eşleşmiyorsa bu fatura bu avansa ait değil
+    } else {
+      // Avansın kodu yoksa firma adına göre eşleştir (eski davranış, geriye dönük)
+      if (avSupplier && invSupplier !== avSupplier) return;
     }
-    if (av.supplier && inv.supplier !== av.supplier && av.code && String(inv.code||'') !== av.code) return;
+    // Kod eşleşiyorsa mahsubu topla (kod zaten işi tekilleştiriyor)
     (inv.kesintiler || []).forEach(k => {
       if (k.tip === 'avans') sum += (k.tutar || 0);
     });
