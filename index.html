@@ -2181,7 +2181,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v8.7 (22.09)';
+const APP_BUILD = 'v8.8 (22.09)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -3751,7 +3751,8 @@ function getLeafItemTry(b) {
 
 // Bütçe kalemi için referans FX kuru (tek değer — özet/karşılaştırma için)
 function getBudgetItemFx(b) {
-  // İş programı varsa başlangıç ayının kuru
+  // ── ÖNCELİK ZİNCİRİ ──
+  // 1) İş programı varsa → başlangıç ayının kuru
   const prog = state.program[b.id];
   if (prog && prog.start) return getFxForMonth(toYearMonth(prog.start));
   // Yaprak değilse alt kalemlerin programlarına bak
@@ -3762,7 +3763,50 @@ function getBudgetItemFx(b) {
       if (p && p.start) return getFxForMonth(toYearMonth(p.start));
     }
   }
+
+  // 2) İş programı yok → FATURALARIN tarihlerine göre ağırlıklı ortalama kur
+  const fatFx = _weightedFxFromInvoices(b);
+  if (fatFx > 0) return fatFx;
+
+  // 3) Fatura da yok → AVANSLARIN tarihlerine göre ağırlıklı ortalama kur
+  const avFx = _weightedFxFromAvans(b);
+  if (avFx > 0) return avFx;
+
+  // 4) Hiçbiri yok → bugünkü kur
   return getCurrentFx();
+}
+
+// Bir kaleme ait faturaların tarihlerine göre ağırlıklı ortalama kur (tutar ağırlıklı)
+function _weightedFxFromInvoices(b) {
+  const invoices = getInvoicesForBudgetItem(b);
+  if (!invoices || invoices.length === 0) return 0;
+  let toplamTl = 0, toplamUsd = 0;
+  invoices.forEach(inv => {
+    const tarih = inv.date || inv.dueDate;
+    if (!tarih) return;
+    const kur = getFxForDate(tarih);
+    const net = inv.amount || 0;
+    if (kur > 0 && net > 0) { toplamTl += net; toplamUsd += net / kur; }
+  });
+  return toplamUsd > 0 ? (toplamTl / toplamUsd) : 0;
+}
+
+// Bir kaleme ait avans girişlerinin tarihlerine göre ağırlıklı ortalama kur
+function _weightedFxFromAvans(b) {
+  const bCode = String(b.code || '').trim();
+  if (!bCode) return 0;
+  let toplamTl = 0, toplamUsd = 0;
+  (state.avanslar || []).forEach(av => {
+    const aCode = String(av.code || '').trim();
+    const eslesir = aCode && (aCode === bCode || aCode.startsWith(bCode + '.') || bCode.startsWith(aCode + '.'));
+    if (!eslesir) return;
+    (av.girisler || []).forEach(g => {
+      const kur = (g.fx && g.fx > 0) ? g.fx : getFxForDate(g.tarih);
+      const tutar = g.tutar || 0;
+      if (kur > 0 && tutar > 0) { toplamTl += tutar; toplamUsd += tutar / kur; }
+    });
+  });
+  return toplamUsd > 0 ? (toplamTl / toplamUsd) : 0;
 }
 
 function getBudgetItemTotalTry(b) {
