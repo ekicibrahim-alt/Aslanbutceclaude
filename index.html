@@ -2181,7 +2181,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v9.2 (12.10)';
+const APP_BUILD = 'v9.3 (12.10)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -3721,7 +3721,21 @@ let _leafCache = null;          // { [id]: true/false } yaprak mı
 let _descLeafCache = null;      // { [id]: [leaf,...] } alt yapraklar
 let _leafCacheVer = -1;
 let _budgetDataVersion = 0;
-function invalidateBudgetCache() { _budgetDataVersion++; }
+function invalidateBudgetCache() { _budgetDataVersion++; _memoStore = {}; _memoVer = _budgetDataVersion; }
+
+// ── GENEL MEMOIZATION (bütçe hesapları) ──
+// Ana kategoriler alt kalemlerini her hesapta tekrar topluyordu (2850 kalem × 25 fonksiyon
+// × alt ağaç tarama). memo: her (fonksiyon, kalem id) sonucunu bir kez hesapla, sakla.
+let _memoStore = {};
+let _memoVer = -1;
+function _memo(fnName, b, compute) {
+  if (_memoVer !== _budgetDataVersion) { _memoStore = {}; _memoVer = _budgetDataVersion; }
+  const key = fnName + '|' + (b.id || b.code || '');
+  if (key in _memoStore) return _memoStore[key];
+  const v = compute();
+  _memoStore[key] = v;
+  return v;
+}
 function _buildBudgetHierarchy() {
   if (_leafCache && _leafCacheVer === _budgetDataVersion) return;
   const budget = state.budget || [];
@@ -3784,11 +3798,10 @@ function getDescendantLeaves(b) {
 
 // Bir bütçe kaleminin USD toplamı — ana kategori ise alt kalemlerin toplamı
 function getBudgetItemTotalUsd(b) {
-  // Yaprak değilse — alt kalemlerin toplamı
-  if (!isBudgetLeaf(b)) {
-    return getDescendantLeaves(b).reduce((sum, leaf) => sum + getLeafItemUsd(leaf), 0);
-  }
-  return getLeafItemUsd(b);
+  return _memo('totUsd', b, () => {
+    if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((sum, leaf) => sum + getLeafItemUsd(leaf), 0);
+    return getLeafItemUsd(b);
+  });
 }
 
 // Sadece yaprak kalem için (kendi miktar × birim fiyat, currency dönüşümlü)
@@ -3829,6 +3842,7 @@ function getLeafItemTry(b) {
 
 // Bütçe kalemi için referans FX kuru (tek değer — özet/karşılaştırma için)
 function getBudgetItemFx(b) {
+  return _memo('fx', b, function() {
   // ── ÖNCELİK ZİNCİRİ ──
   // 1) İş programı varsa → başlangıç ayının kuru
   const prog = state.program[b.id];
@@ -3852,6 +3866,7 @@ function getBudgetItemFx(b) {
 
   // 4) Hiçbiri yok → bugünkü kur
   return getCurrentFx();
+  });
 }
 
 // Bir kaleme ait faturaların tarihlerine göre ağırlıklı ortalama kur (tutar ağırlıklı)
@@ -3888,11 +3903,13 @@ function _weightedFxFromAvans(b) {
 }
 
 function getBudgetItemTotalTry(b) {
+  return _memo('totTry', b, function() {
   // Yaprak değilse — alt kalemlerin TL toplamı
   if (!isBudgetLeaf(b)) {
     return getDescendantLeaves(b).reduce((sum, leaf) => sum + getLeafItemTry(leaf), 0);
   }
   return getLeafItemTry(b);
+  });
 }
 
 // ============================================================
@@ -3901,17 +3918,21 @@ function getBudgetItemTotalTry(b) {
 // Bir kalemin efektif revize USD'si: kendi revizesi varsa o, yoksa baz.
 // Ana kategori: alt kalemlerin (revize varsa revize, yoksa baz) toplamı.
 function getEffectiveRevisedUsd(b) {
+  return _memo('effRev', b, function() {
   if (!isBudgetLeaf(b)) {
     return getDescendantLeaves(b).reduce((sum, leaf) =>
       sum + (leaf.revisedBudgetUsd != null ? leaf.revisedBudgetUsd : getLeafItemUsd(leaf)), 0);
   }
   return b.revisedBudgetUsd != null ? b.revisedBudgetUsd : getLeafItemUsd(b);
+  });
 }
 
 // Bir kalemin/ağacın altında gerçekten revize edilmiş kalem var mı?
 function hasRevisionInTree(b) {
+  return _memo('hasRev', b, function() {
   if (isBudgetLeaf(b)) return b.revisedBudgetUsd != null;
   return getDescendantLeaves(b).some(leaf => leaf.revisedBudgetUsd != null);
+  });
 }
 
 // ============================================================
@@ -3928,18 +3949,22 @@ function getItemKdvRate(b) {
 
 // KDV tutarı USD (ağırlıklı — her yaprak kendi oranıyla)
 function getBudgetItemKdvUsd(b) {
+  return _memo('kdvUsd', b, function() {
   if (!isBudgetLeaf(b)) {
     return getDescendantLeaves(b).reduce((sum, leaf) => sum + getBudgetItemKdvUsd(leaf), 0);
   }
   const rate = getItemKdvRate(b);
   return getLeafItemUsd(b) * (rate / 100);
+  });
 }
 function getBudgetItemKdvTry(b) {
+  return _memo('kdvTry', b, function() {
   if (!isBudgetLeaf(b)) {
     return getDescendantLeaves(b).reduce((sum, leaf) => sum + getBudgetItemKdvTry(leaf), 0);
   }
   const rate = getItemKdvRate(b);
   return getLeafItemTry(b) * (rate / 100);
+  });
 }
 // KDV dahil toplam
 function getBudgetItemGrossUsd(b) { return getBudgetItemTotalUsd(b) + getBudgetItemKdvUsd(b); }
@@ -3947,6 +3972,7 @@ function getBudgetItemGrossTry(b) { return getBudgetItemTotalTry(b) + getBudgetI
 
 // Gerçekleşme KDV dahil — faturanın gerçek KDV'sinden
 function getBudgetItemActualGrossTry(b) {
+  return _memo('actGTry', b, function() {
   const invoices = getInvoicesForBudgetItem(b);
   return invoices.reduce((sum, inv) => {
     const c = calcInvoiceTotals(inv);
@@ -3955,8 +3981,10 @@ function getBudgetItemActualGrossTry(b) {
     const kdvOran = c.net > 0 ? (netG / c.net) : 1;
     return sum + netG + (c.kdvTotal * kdvOran);
   }, 0);
+  });
 }
 function getBudgetItemActualGrossUsd(b) {
+  return _memo('actGUsd', b, function() {
   const invoices = getInvoicesForBudgetItem(b);
   const fx = getBudgetItemFx(b);
   return invoices.reduce((sum, inv) => {
@@ -3966,14 +3994,17 @@ function getBudgetItemActualGrossUsd(b) {
     const kdvOran = c.net > 0 ? (netG / c.net) : 1;
     return sum + (netG + (c.kdvTotal * kdvOran)) / invFx;
   }, 0);
+  });
 }
 // Revize KDV dahil — efektif revize × (1 + ağırlıklı KDV oranı)
 function getEffectiveRevisedGrossUsd(b) {
+  return _memo('effRevG', b, function() {
   const revUsd = getEffectiveRevisedUsd(b);
   const baseUsd = getBudgetItemTotalUsd(b);
   const grossUsd = getBudgetItemGrossUsd(b);
   const kdvCarpan = baseUsd > 0 ? (grossUsd / baseUsd) : 1.20;
   return revUsd * kdvCarpan;
+  });
 }
 
 
@@ -4065,6 +4096,7 @@ function getUnmatchedInvoices() {
 
 // Bu kaleme ait avans girişlerinin toplamı (TL) — mahsuptan bağımsız brüt verilen
 function getBudgetItemAvansVerilenTry(b) {
+  return _memo('avVerTry', b, function() {
   if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemAvansVerilenTry(leaf), 0);
   const bCode = String(b.code || '').trim();
   let sum = 0;
@@ -4074,8 +4106,10 @@ function getBudgetItemAvansVerilenTry(b) {
     if (eslesir) (av.girisler || []).forEach(g => { sum += (g.tutar || 0); });
   });
   return sum;
+  });
 }
 function getBudgetItemAvansVerilenUsd(b) {
+  return _memo('avVerUsd', b, function() {
   if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemAvansVerilenUsd(leaf), 0);
   const bCode = String(b.code || '').trim();
   const fx = getBudgetItemFx(b);
@@ -4086,16 +4120,20 @@ function getBudgetItemAvansVerilenUsd(b) {
     if (eslesir) (av.girisler || []).forEach(g => { sum += (g.tutar || 0) / (g.fx && g.fx > 0 ? g.fx : fx); });
   });
   return sum;
+  });
 }
 
 // MAHSUP EDİLEN avans (bu kaleme ait faturalardaki avans kesintileri) — işe fiilen dönüşen avans
 function getBudgetItemAvansMahsupTry(b) {
+  return _memo('avMahTry', b, function() {
   if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemAvansMahsupTry(leaf), 0);
   return getInvoicesForBudgetItem(b).reduce((sum, inv) => {
     return sum + (inv.kesintiler || []).reduce((s, k) => s + (k.tip === 'avans' ? (k.tutar || 0) : 0), 0);
   }, 0);
+  });
 }
 function getBudgetItemAvansMahsupUsd(b) {
+  return _memo('avMahUsd', b, function() {
   if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemAvansMahsupUsd(leaf), 0);
   const fx = getBudgetItemFx(b);
   return getInvoicesForBudgetItem(b).reduce((sum, inv) => {
@@ -4103,20 +4141,26 @@ function getBudgetItemAvansMahsupUsd(b) {
     const m = (inv.kesintiler || []).reduce((s, k) => s + (k.tip === 'avans' ? (k.tutar || 0) : 0), 0);
     return sum + m / invFx;
   }, 0);
+  });
 }
 
 // AVANS BAKİYESİ = verilen − mahsup (taşeronda duran, henüz işe dönüşmemiş para)
 function getBudgetItemAvansBakiyeTry(b) {
+  return _memo('avbTry', b, function() {
   return getBudgetItemAvansVerilenTry(b) - getBudgetItemAvansMahsupTry(b);
+  });
 }
 function getBudgetItemAvansBakiyeUsd(b) {
+  return _memo('avbUsd', b, function() {
   return getBudgetItemAvansVerilenUsd(b) - getBudgetItemAvansMahsupUsd(b);
+  });
 }
 
 // ÖDENEN (bu kaleme/faturaya fiilen ödenen nakit) = fatura taksit ödemeleri
 // Mahsup avans dahil DEĞİL — o para avans verilince zaten çıktı (çift sayım önleme).
 // Avans Cari Durumu'nda ayrı (verilen/mahsup/bakiye) durur.
 function getBudgetItemOdenenTry(b) {
+  return _memo('odTry', b, function() {
   if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemOdenenTry(leaf), 0);
   let sum = 0;
   getInvoicesForBudgetItem(b).forEach(inv => {
@@ -4124,8 +4168,10 @@ function getBudgetItemOdenenTry(b) {
     sum += (c.totalPaid || 0); // sadece taksitlerde fiilen ödenen
   });
   return sum;
+  });
 }
 function getBudgetItemOdenenUsd(b) {
+  return _memo('odUsd', b, function() {
   if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemOdenenUsd(leaf), 0);
   const fx = getBudgetItemFx(b);
   let sum = 0;
@@ -4135,16 +4181,20 @@ function getBudgetItemOdenenUsd(b) {
     sum += (c.totalPaid || 0) / invFx;
   });
   return sum;
+  });
 }
 
 // FATURALANAN (tahakkuk, brüt hakediş) — ödenmemiş bakiye için
 function getBudgetItemFaturalananTry(b) {
+  return _memo('fatTry', b, function() {
   if (!isBudgetLeaf(b)) return getDescendantLeaves(b).reduce((s, leaf) => s + getBudgetItemFaturalananTry(leaf), 0);
   return getInvoicesForBudgetItem(b).reduce((s, inv) => s + (calcInvoiceTotals(inv).grandTotal || 0), 0);
+  });
 }
 
 // Bir bütçe kalemi için gerçekleşen toplam USD
 function getBudgetItemActualUsd(b) {
+  return _memo('actUsd', b, function() {
   if (!isBudgetLeaf(b)) {
     // Ana kategori: alt kalemlerin toplamı
     return getDescendantLeaves(b).reduce((sum, leaf) => sum + getBudgetItemActualUsd(leaf), 0);
@@ -4158,10 +4208,12 @@ function getBudgetItemActualUsd(b) {
     const netGerceklesme = c.net - (c.kesYansitma || 0) - (c.kesCeza || 0);
     return sum + (netGerceklesme / invFx);
   }, 0);
+  });
 }
 
 // Bir bütçe kalemi için gerçekleşen toplam TL
 function getBudgetItemActualTry(b) {
+  return _memo('actTry', b, function() {
   if (!isBudgetLeaf(b)) {
     return getDescendantLeaves(b).reduce((sum, leaf) => sum + getBudgetItemActualTry(leaf), 0);
   }
@@ -4170,17 +4222,21 @@ function getBudgetItemActualTry(b) {
     const c = calcInvoiceTotals(inv);
     return sum + (c.net - (c.kesYansitma || 0) - (c.kesCeza || 0));
   }, 0);
+  });
 }
 
 // Bu kalemden yansıtılan (3. tarafa aktarılan) toplam — TL
 function getBudgetItemYansitilanTry(b) {
+  return _memo('yansTry', b, function() {
   if (!isBudgetLeaf(b)) {
     return getDescendantLeaves(b).reduce((sum, leaf) => sum + getBudgetItemYansitilanTry(leaf), 0);
   }
   const invoices = getInvoicesForBudgetItem(b);
   return invoices.reduce((sum, inv) => sum + (calcInvoiceTotals(inv).kesYansitma || 0), 0);
+  });
 }
 function getBudgetItemYansitilanUsd(b) {
+  return _memo('yansUsd', b, function() {
   if (!isBudgetLeaf(b)) {
     return getDescendantLeaves(b).reduce((sum, leaf) => sum + getBudgetItemYansitilanUsd(leaf), 0);
   }
@@ -4190,6 +4246,7 @@ function getBudgetItemYansitilanUsd(b) {
     const invFx = getInvoiceFx(inv);
     return sum + ((calcInvoiceTotals(inv).kesYansitma || 0) / invFx);
   }, 0);
+  });
 }
 
 // Revize bütçe kaydet
