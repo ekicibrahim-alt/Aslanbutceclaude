@@ -754,12 +754,14 @@ body.view-mode .lock-status * {
         <div class="label">Toplam Bütçe</div>
         <div class="value" id="kpi-budget-try">—</div>
         <div class="value-secondary" id="kpi-budget-usd">—</div>
+        <div class="value-note" id="kpi-budget-arsa" style="margin-top:4px;"></div>
       </div>
       <div class="kpi-card highlight">
         <div class="label">İş Gerçekleşmesi (net)</div>
         <div class="value" id="kpi-actual-try">—</div>
         <div class="value-secondary" id="kpi-actual-usd">—</div>
         <div class="value-note" id="kpi-faturalanan-note" style="margin-top:4px;"></div>
+        <div class="value-note" id="kpi-actual-arsa" style="margin-top:2px;"></div>
       </div>
       <div class="kpi-card success">
         <div class="label">Tahsilat (Gerçek)</div>
@@ -2220,7 +2222,7 @@ function _unpackFromLocal(raw) {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v9.7 (12.10)';
+const APP_BUILD = 'v9.8 (12.10)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -5000,6 +5002,36 @@ function renderKpis() {
   document.getElementById('kpi-budget-usd').textContent = fmtUSD(overall.totalBudget);
   document.getElementById('kpi-actual-try').textContent = fmtTL(totalActualTry);
   document.getElementById('kpi-actual-usd').textContent = fmtUSD(overall.totalActualUsd || overall.totalActual);
+
+  // ── ARSA DAHİL / HARİÇ KIRILIMI (sadece Özet) ──
+  // Ana karttaki değer = arsa DAHİL (toplam). Not satırı = arsa HARİÇ ve arsanın kendisi.
+  {
+    const landCode = (state.settings.landAccountCode || '').trim();
+    const isLand = (b) => landCode && (b.code === landCode || String(b.code || '').startsWith(landCode + '.'));
+    const leaves = getLeafBudgetItems();
+    let landBudUsd = 0, landBudTry = 0, landActUsd = 0, landActTry = 0;
+    leaves.forEach(b => {
+      if (isLand(b)) {
+        landBudUsd += getBudgetItemTotalUsd(b);
+        landBudTry += getBudgetItemTotalTry(b);
+        landActUsd += getBudgetItemActualUsd(b);
+        landActTry += getBudgetItemActualTry(b);
+      }
+    });
+    const totActUsd = overall.totalActualUsd || overall.totalActual || 0;
+    const budNote = document.getElementById('kpi-budget-arsa');
+    const actNote = document.getElementById('kpi-actual-arsa');
+    if (budNote) {
+      budNote.textContent = (landCode && landBudTry > 0)
+        ? `Arsa hariç: ${fmtTL(totalBudgetTry - landBudTry)} · ${fmtUSD(overall.totalBudget - landBudUsd)}  |  Arsa: ${fmtTL(landBudTry)}`
+        : (landCode ? 'Arsa kalemi bulunamadı (kodu kontrol et)' : '');
+    }
+    if (actNote) {
+      actNote.textContent = (landCode && landActTry > 0)
+        ? `Arsa hariç: ${fmtTL(totalActualTry - landActTry)} · ${fmtUSD(totActUsd - landActUsd)}  |  Arsa: ${fmtTL(landActTry)}`
+        : '';
+    }
+  }
   const fatNote = document.getElementById('kpi-faturalanan-note');
   if (fatNote) {
     const fatTry = overall.faturalananTry || 0;
@@ -8350,6 +8382,26 @@ async function importXlsx(event) {
     return;
   }
   
+  // Proje üstü meta alanları (inşaat/satılabilir alan, arsa kodu, değerlendirme tarihi):
+  // bunlar Excel'de düzgün taşınmıyor → import bu değerleri EZMESİN, mevcut olanı koru.
+  const _prevMeta = {
+    totalArea: state.settings.totalArea || 0,
+    salableArea: state.settings.salableArea || 0,
+    landAccountCode: (state.settings.landAccountCode || '').trim(),
+    targetDate: state.settings.targetDate || ''
+  };
+  const _restoreMeta = () => {
+    const incLand = (state.settings.landAccountCode || '').trim();
+    // İnşaat/satılabilir alan: gelen 0 ise eskisini koru
+    if (!(state.settings.totalArea > 0) && _prevMeta.totalArea > 0) state.settings.totalArea = _prevMeta.totalArea;
+    if (!(state.settings.salableArea > 0) && _prevMeta.salableArea > 0) state.settings.salableArea = _prevMeta.salableArea;
+    // Arsa kodu: gelen boş veya varsayılan (150.01.01) ise, eskisi anlamlıysa onu koru
+    if ((!incLand || incLand === '150.01.01') && _prevMeta.landAccountCode && _prevMeta.landAccountCode !== '150.01.01') {
+      state.settings.landAccountCode = _prevMeta.landAccountCode;
+    }
+    if (!state.settings.targetDate && _prevMeta.targetDate) state.settings.targetDate = _prevMeta.targetDate;
+  };
+
   try {
     const buffer = await file.arrayBuffer();
     const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
@@ -8404,6 +8456,7 @@ async function importXlsx(event) {
         state.avanslar = veriData.avanslar || [];
         state.teminatIadeleri = veriData.teminatIadeleri || [];
         state.program = veriData.program || {};
+        _restoreMeta();
         applyProjectMigrations(state);
         await saveState();
         renderAll();
@@ -8663,8 +8716,9 @@ async function importXlsx(event) {
       }
       delete window._veriTaban; // temizle
     }
+    _restoreMeta();
     applyProjectMigrations(state);
-    
+
     await saveState();
     renderAll();
     event.target.value = '';
