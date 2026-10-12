@@ -2181,7 +2181,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v8.9 (12.10)';
+const APP_BUILD = 'v9.0 (12.10)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -3253,6 +3253,8 @@ function loadActiveProject() {
   state = app.projects[id];
   applyProjectMigrations(state);
   invalidateFxCache(); // migration kur verisini değiştirir → SONRASINDA önbelleği temizle
+  invalidateInvoiceCache();
+  invalidateBudgetCache();
 }
 
 async function saveApp(opts) {
@@ -3277,6 +3279,8 @@ async function saveApp(opts) {
 async function saveState() {
   state.lastModified = Date.now();
   invalidateFxCache(); // veri değişti — kur önbelleğini tazele (kur güncellenmişse yeni değer alınır)
+  invalidateInvoiceCache(); // fatura/bütçe değişti — eşleştirme önbelleğini tazele
+  invalidateBudgetCache();
   // projectList'teki lastModified'i güncelle
   const id = app.meta.activeProjectId;
   if (id) {
@@ -3710,14 +3714,55 @@ function distributeOverCurve(total, n, curve) {
   return arr;
 }
 
-// Get only level-5 (or leaf) items for actual cost calculation
-function getLeafBudgetItems() {
-  return state.budget.filter(b => isBudgetLeaf(b));
+// ── BÜTÇE YAPRAK/HIYERARŞI ÖNBELLEĞİ ──
+// isBudgetLeaf her çağrıda 338 kalemi tarıyordu; her render'da binlerce kez çağrılıyor.
+// Hangi kodların yaprak olduğunu ve alt kalem eşleşmelerini bir kez hesapla.
+let _leafCache = null;          // { [id]: true/false } yaprak mı
+let _descLeafCache = null;      // { [id]: [leaf,...] } alt yapraklar
+let _leafCacheVer = -1;
+let _budgetDataVersion = 0;
+function invalidateBudgetCache() { _budgetDataVersion++; }
+function _buildBudgetHierarchy() {
+  if (_leafCache && _leafCacheVer === _budgetDataVersion) return;
+  const budget = state.budget || [];
+  // Kodları sırala, her kod için "alt kalemi var mı" tespit et
+  _leafCache = {};
+  _descLeafCache = {};
+  // Önce tüm kodları topla
+  const codes = budget.map(b => ({ id: b.id, code: String(b.code||'').trim(), ref: b }));
+  // Yaprak tespiti: bir kodun altında başka kod başlıyorsa yaprak değil
+  const codeSet = codes.map(c => c.code);
+  codes.forEach(c => {
+    const prefix = c.code + '.';
+    let hasChild = false;
+    for (let i = 0; i < codeSet.length; i++) {
+      if (codeSet[i] !== c.code && codeSet[i].startsWith(prefix)) { hasChild = true; break; }
+    }
+    _leafCache[c.id] = !hasChild;
+  });
+  // Her kalem için alt yapraklar
+  codes.forEach(c => {
+    if (_leafCache[c.id]) { _descLeafCache[c.id] = [c.ref]; return; }
+    const prefix = c.code + '.';
+    const leaves = [];
+    codes.forEach(o => {
+      if (o.id !== c.id && o.code.startsWith(prefix) && _leafCache[o.id]) leaves.push(o.ref);
+    });
+    _descLeafCache[c.id] = leaves;
+  });
+  _leafCacheVer = _budgetDataVersion;
 }
 
-// Bir kalemin alt kalemi var mı? (kod hiyerarşisine göre)
+// Get only level-5 (or leaf) items for actual cost calculation
+function getLeafBudgetItems() {
+  _buildBudgetHierarchy();
+  return (state.budget || []).filter(b => _leafCache[b.id]);
+}
+
+// Bir kalemin alt kalemi var mı? (kod hiyerarşisine göre) — önbellekli
 function isBudgetLeaf(b) {
-  return !state.budget.some(other => other.id !== b.id && String(other.code||'').startsWith(String(b.code||'') + '.'));
+  _buildBudgetHierarchy();
+  return _leafCache[b.id] !== false; // tanımsızsa yaprak say (güvenli)
 }
 
 // Doğrudan alt kalemleri döndürür (bir seviye altı)
@@ -3731,13 +3776,10 @@ function getDirectChildren(b) {
   });
 }
 
-// Bir kalemin tüm yaprak (leaf) alt kalemlerini döndürür (recursive)
+// Bir kalemin tüm yaprak (leaf) alt kalemlerini döndürür — önbellekli
 function getDescendantLeaves(b) {
-  if (isBudgetLeaf(b)) return [b];
-  const descendants = state.budget.filter(other => 
-    other.id !== b.id && String(other.code||'').startsWith(String(b.code||'') + '.')
-  );
-  return descendants.filter(d => isBudgetLeaf(d));
+  _buildBudgetHierarchy();
+  return _descLeafCache[b.id] || [b];
 }
 
 // Bir bütçe kaleminin USD toplamı — ana kategori ise alt kalemlerin toplamı
@@ -3958,15 +4000,44 @@ function getDerivedProgramRange(b) {
 // ============================================================
 
 // Bir bütçe kalemine ait faturaları bul (hesap kodu örtüşmesine göre)
+// ── FATURA-KALEM EŞLEŞTİRME ÖNBELLEĞİ ──
+// getInvoicesForBudgetItem her çağrıda 150 faturayı filtreliyordu; 338 kalem × çok sayıda
+// hesap × her render = milyonlarca işlem → yavaşlık. Önbellek: her bütçe koduna ait faturaları
+// bir kez grupla, tekrar tekrar filtreleme yerine hazır listeden oku.
+let _invByCodeCache = null;
+let _invCacheVer = -1;
+let _invDataVersion = 0;
+function invalidateInvoiceCache() { _invDataVersion++; }
+function _buildInvByCode() {
+  if (_invByCodeCache && _invCacheVer === _invDataVersion) return _invByCodeCache;
+  // Her faturayı kendi koduna göre indeksle
+  const byExact = {};
+  (state.invoices || []).forEach(inv => {
+    if (!inv.code) return;
+    const c = inv.code.trim();
+    if (!byExact[c]) byExact[c] = [];
+    byExact[c].push(inv);
+  });
+  _invByCodeCache = byExact;
+  _invCacheVer = _invDataVersion;
+  return _invByCodeCache;
+}
+
 function getInvoicesForBudgetItem(b) {
   if (!b.code) return [];
-  return state.invoices.filter(inv => {
-    if (!inv.code) return false;
-    const invCode = inv.code.trim();
-    const bCode = b.code.trim();
-    // Tam eşleşme VEYA fatura kodu bütçe kodunun alt kalemi
-    return invCode === bCode || invCode.startsWith(bCode + '.') || invCode.startsWith(bCode + '-');
-  });
+  const bCode = b.code.trim();
+  const byExact = _buildInvByCode();
+  // Tam eşleşenler + alt kod eşleşenler. Alt kodlar için indeksteki anahtarları tara
+  // (anahtar sayısı fatura sayısından az, çok daha hızlı)
+  let result = byExact[bCode] ? byExact[bCode].slice() : [];
+  const prefix1 = bCode + '.', prefix2 = bCode + '-';
+  for (const code in byExact) {
+    if (code === bCode) continue;
+    if (code.startsWith(prefix1) || code.startsWith(prefix2)) {
+      result = result.concat(byExact[code]);
+    }
+  }
+  return result;
 }
 
 // Bir fatura herhangi bir bütçe kalemine bağlanıyor mu?
