@@ -2181,7 +2181,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v8.8 (22.09)';
+const APP_BUILD = 'v8.9 (12.10)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -2840,17 +2840,39 @@ function setFirebaseSyncStatus(ok, errMsg) {
 // ── OTOMATİK YEREL YEDEK (son 5 sürümü sakla, veri kaybına karşı) ──
 function autoLocalBackup(value) {
   try {
+    // Yedek, kaydı GEREKSİZ yere şişirmesin. Ana veri zaten Firebase'de güvende;
+    // bu sadece acil yerel yedek. Büyük veride yedek localStorage kotasını doldurup
+    // asıl kaydı engelliyordu → küçük tut ve kota riskinde atla.
+    const MAX_YEDEK = 2;             // 5 → 2 (yer tasarrufu)
+    const MAX_YEDEK_BYTE = 1500000;  // yedekler toplam ~1.5MB'ı geçmesin
+
+    // Veri zaten büyükse (>1MB) yedek tutma — ana kaydı riske atma
+    if (value.length > 1048576) {
+      try { localStorage.removeItem('bna_backups'); } catch(e) {}
+      return;
+    }
+
     const stamp = new Date().toISOString();
-    // Son yedekleri al
     let backups = [];
     try { backups = JSON.parse(localStorage.getItem('bna_backups') || '[]'); } catch(e) { backups = []; }
-    // Aynı içerik peş peşe yedeklenmesin (değişmediyse atla)
+    // Aynı içerik peş peşe yedeklenmesin
     if (backups.length > 0 && backups[backups.length-1].data === value) return;
     backups.push({ stamp, data: value });
-    // Son 5 yedeği tut (yer kaplamasın)
-    while (backups.length > 5) backups.shift();
-    localStorage.setItem('bna_backups', JSON.stringify(backups));
-  } catch(e) { /* localStorage dolu olabilir, sessiz geç */ }
+    while (backups.length > MAX_YEDEK) backups.shift();
+
+    // Toplam boyut sınırını aş­ma — aşıyorsa en eskiyi at
+    let serialized = JSON.stringify(backups);
+    while (serialized.length > MAX_YEDEK_BYTE && backups.length > 1) {
+      backups.shift();
+      serialized = JSON.stringify(backups);
+    }
+    try {
+      localStorage.setItem('bna_backups', serialized);
+    } catch(e) {
+      // Kota dolu → yedekten tamamen vazgeç (ana veri Firebase'de güvende)
+      try { localStorage.removeItem('bna_backups'); } catch(e2) {}
+    }
+  } catch(e) { /* sessiz geç */ }
 }
 
 // Yedekleri listele/geri yükle (konsoldan erişilebilir acil kurtarma)
@@ -2909,8 +2931,22 @@ const persistentStorage = {
       localStorage.setItem(key, value);
       return { key, value, shared: false };
     } catch (e) {
-      console.error('localStorage hatası:', e);
-      throw e;
+      // Kota dolu olabilir → eski yedekleri silip yer açarak tekrar dene
+      console.warn('localStorage kota hatası, yedekler temizlenip tekrar denenecek:', e);
+      try {
+        localStorage.removeItem('bna_backups');  // ~MB'larca yer açar
+        localStorage.setItem(key, value);
+        return { key, value, shared: false };
+      } catch (e2) {
+        // Hâlâ olmuyor. Firebase'e yazıldıysa sorun yok (ana veri güvende).
+        // Firebase de yoksa gerçek sorun — ama veri kaybı değil, sadece yerel yedek yok.
+        console.error('localStorage yazılamadı (yedekler silindikten sonra da):', e2);
+        if (firebaseDb) {
+          // Firebase aktifse: ana veri zaten oraya yazılmaya çalışıldı, localStorage kritik değil
+          return { key, value, shared: false, localStorageSkipped: true };
+        }
+        throw e2;
+      }
     }
   },
   async delete(key) {
