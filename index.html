@@ -2183,7 +2183,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v9.4 (12.10)';
+const APP_BUILD = 'v9.5 (12.10)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -5466,17 +5466,32 @@ function renderProgramTable() {
   // Yaprak kalem (alt kalemi olmayan, her seviyede) zamanlanabilir
   // Alt kalemi olanlar: tarihleri alt kalemlerden türetilir, Zamanla butonu yok
   const allItems = [...state.budget].sort((a, b) => (a.code||"").localeCompare(b.code||""));
-  
+  // Performans: kod→kalem haritası (her satırda sıralama+find taramasını önler)
+  const _codeMap = {};
+  allItems.forEach(x => { if (x.code) _codeMap[x.code] = x; });
+
   const filtered = programFilter === 'unscheduled'
     ? allItems.filter(b => isBudgetLeaf(b) && !state.program[b.id])
     : allItems;
-  
+
+  const _rows = [];  // satırları biriktir, tek innerHTML
   filtered.forEach(b => {
     const isLeaf = isBudgetLeaf(b);
     const hasKids = hasChildren(b);
-    // Sadece alt kalemi olanlar türetilir; yaprak kalem (her seviyede) zamanlanabilir
     const isParent = !isLeaf;
-    
+
+    // Katlanmış satırı DOM'a hiç yazma (filtre modunda katlama yok)
+    const parentCodes = getParentCodes(b.code);
+    let _attr = '';
+    if (parentCodes.length > 0 && programFilter !== 'unscheduled') {
+      _attr = ` data-parent-codes="${parentCodes.join(',')}"`;
+      const shouldHide = parentCodes.some(pc => {
+        const parent = _codeMap[pc];
+        return parent && _collapsedRows.has(parent.id);
+      });
+      if (shouldHide) return; // çizme
+    }
+
     let prog, derivedNote = '';
     if (isParent) {
       const derived = getDerivedProgramRange(b);
@@ -5485,23 +5500,8 @@ function renderProgramTable() {
     } else {
       prog = state.program[b.id] || {};
     }
-    
+
     const months = (prog.start && prog.end) ? getMonthsInRange(prog.start, prog.end).length : 0;
-    const tr = document.createElement('tr');
-    tr.className = `level-${b.level}`;
-
-    // Collapse desteği
-    const allSorted = [...state.budget].sort((a, b) => (a.code||"").localeCompare(b.code||""));
-    const parentCodes = getParentCodes(b.code);
-    if (parentCodes.length > 0) {
-      tr.setAttribute('data-parent-codes', parentCodes.join(','));
-      const shouldHide = parentCodes.some(pc => {
-        const parent = allSorted.find(x => x.code === pc);
-        return parent && _collapsedRows.has(parent.id);
-      });
-      if (shouldHide) tr.classList.add('collapsed-hidden');
-    }
-
     const isCollapsed = _collapsedRows.has(b.id);
     const toggleHtml = hasKids
       ? `<span class="collapse-toggle" data-toggle-id="${b.id}" onclick="toggleCollapse('${b.id}','${b.code}')"><span class="toggle-icon">${isCollapsed ? '▶' : '▼'}</span></span> `
@@ -5514,8 +5514,8 @@ function renderProgramTable() {
     const startCell = prog.start
       ? fmtMonth(prog.start) + derivedNote
       : (isParent ? '—' : '<span class="badge badge-warning">Atanmamış</span>');
-    
-    tr.innerHTML = `
+
+    _rows.push(`<tr class="level-${b.level}"${_attr}>
       <td class="mono">${b.code}</td>
       <td>${indent}${toggleHtml}${b.name}</td>
       <td class="center">${startCell}</td>
@@ -5524,9 +5524,9 @@ function renderProgramTable() {
       <td>${(isLeaf && prog.curve) ? labelCurve(prog.curve) : '—'}</td>
       <td class="right">${fmtUSD(getBudgetItemTotalUsd(b))}</td>
       <td class="center">${actionCell}</td>
-    `;
-    tbody.appendChild(tr);
+    </tr>`);
   });
+  tbody.innerHTML = _rows.join('');  // TEK seferde DOM
   
   if (filtered.length === 0) {
     tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Henüz bütçe kalemi yok veya tüm kalemler zamanlandı</td></tr>';
