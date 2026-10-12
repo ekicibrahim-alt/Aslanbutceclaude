@@ -2181,7 +2181,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v9.1 (12.10)';
+const APP_BUILD = 'v9.2 (12.10)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -4643,22 +4643,50 @@ function computeCategoryBreakdown() {
 // Özet sekmesindeki TL + USD nakit akış ve finansman tabloları
 
 function renderAll() {
+  // Hafif/her zaman gerekli olanlar
   renderHeader();
-  renderTargetDateInput();
-  renderKpis();
-  renderCategoryBreakdown();
-  renderM2Metrics();
-  renderMainItems();
-  renderBudgetTable();
-  renderProgramTable();
-  renderInvoiceTable();
-  renderDeductionsAll();
-  renderCollectionTable();
-  renderCashflowTable();
-  renderSettings();
   renderProjectList();
-  renderCharts();
+  const tab = (typeof activeTab !== 'undefined' && activeTab) ? activeTab : 'ozet';
+
+  // PERFORMANS: Sadece AKTİF sekmenin ağır tablosunu çiz. Diğerleri o sekmeye
+  // geçince çizilir (switchTab). 2850 kalemli bütçede her renderAll'da 16 tablo
+  // çizmek CPU'yu yakıyordu → sadece görünen sekme.
+  if (tab === 'ozet') {
+    renderTargetDateInput(); renderKpis(); renderCategoryBreakdown();
+    renderM2Metrics(); renderMainItems(); renderCharts();
+  } else if (tab === 'butce') {
+    renderBudgetTable();
+  } else if (tab === 'program') {
+    renderProgramTable();
+  } else if (tab === 'faturalar') {
+    renderInvoiceTable();
+  } else if (tab === 'kesintiler') {
+    renderDeductionsAll();
+  } else if (tab === 'tahsilat') {
+    renderCollectionTable();
+  } else if (tab === 'nakitakis' || tab === 'nakit') {
+    renderCashflowTable();
+  } else if (tab === 'ayarlar') {
+    renderSettings();
+  }
   reapplyFilters();
+}
+
+// Bir sekmeye geçildiğinde o sekmenin içeriğini çiz (tembel render)
+function renderTab(tabName) {
+  try {
+    switch(tabName) {
+      case 'ozet': renderTargetDateInput(); renderKpis(); renderCategoryBreakdown(); renderM2Metrics(); renderMainItems(); renderCharts(); break;
+      case 'butce': renderBudgetTable(); break;
+      case 'program': renderProgramTable(); break;
+      case 'faturalar': renderInvoiceTable(); break;
+      case 'kesintiler': renderDeductionsAll(); break;
+      case 'tahsilat': renderCollectionTable(); break;
+      case 'nakitakis': case 'nakit': renderCashflowTable(); break;
+      case 'ayarlar': renderSettings(); break;
+    }
+    reapplyFilters();
+  } catch(e) { console.warn('renderTab:', e); }
 }
 
 function reapplyFilters() {
@@ -4683,7 +4711,8 @@ function switchTab(tabName) {
     el.classList.toggle('active', el.dataset.tab === tabName);
   });
   activeTab = tabName;
-  if (tabName === 'ozet') renderCharts();
+  // Tembel render: bu sekmenin içeriğini şimdi çiz (açılışta tüm sekmeler çizilmiyor)
+  renderTab(tabName);
 }
 
 function openProjectSwitcher() {
@@ -10928,23 +10957,21 @@ async function _bna_init() {
   applyLockUI();
   updateStorageIndicator();
   attachDateWatchers();  // tüm tarih alanlarına geçersiz-tarih uyarısı bağla
-  // Kur önbelleği/veri açılışta tam oturmamış olabilir → veri gelene kadar birkaç kez dene.
-  // (Kur değerleri ilk açılışta boş görünüp sonra gelme sorununu önler.)
-  {
-    let renderTries = 0;
-    let lastFxCount = (state.settings.dailyFx || []).length;
+  // Kur verisi açılışta tam oturmamış olabilir. AMA büyük bütçede sürekli renderAll
+  // CPU'yu yakar (2850 kalem × her 500ms). Akıllı davran: kur verisi ZATEN varsa
+  // hiç döngüye girme. Sadece boşsa, gelmesini bekle, GELİNCE bir kez çiz ve dur.
+  if ((state.settings.dailyFx || []).length === 0) {
+    let tries = 0;
     const renderWait = setInterval(() => {
-      renderTries++;
-      const nowCount = (state.settings.dailyFx || []).length;
-      // Kur verisi değiştiyse (geldiyse) ya da her denemede yeniden çiz
-      invalidateFxCache();
-      try { renderAll(); } catch(e) {}
-      // Veri gelmişse ve sabitlenmişse birkaç denemeden sonra dur
-      if (nowCount > 0 && nowCount === lastFxCount && renderTries >= 3) {
+      tries++;
+      if ((state.settings.dailyFx || []).length > 0) {
+        // Veri geldi → bir kez tazele+çiz ve DUR
         clearInterval(renderWait);
+        invalidateFxCache();
+        try { renderAll(); } catch(e) {}
+      } else if (tries > 20) {
+        clearInterval(renderWait); // ~10 sn sonra vazgeç
       }
-      lastFxCount = nowCount;
-      if (renderTries > 12) clearInterval(renderWait); // ~6 sn sonra kesin dur
     }, 500);
   }
   const bb = document.getElementById('buildBadge');
