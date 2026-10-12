@@ -946,6 +946,8 @@ body.view-mode .lock-status * {
       <div class="section-header">
         <h2 class="section-title">Bütçe Kalemleri</h2>
         <div class="section-actions">
+          <button class="btn btn-ghost" onclick="collapseAllBudget(true)" title="Tüm alt kalemleri gizle (sadece ana başlıklar)">⊟ Tümünü Katla</button>
+          <button class="btn btn-ghost" onclick="collapseAllBudget(false)" title="Tüm alt kalemleri göster">⊞ Tümünü Aç</button>
           <button class="btn btn-ghost" onclick="exportBudgetCsv()">CSV İndir</button>
           <button class="btn btn-primary" onclick="openBudgetModal()">+ Kalem Ekle</button>
         </div>
@@ -2181,7 +2183,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v9.3 (12.10)';
+const APP_BUILD = 'v9.4 (12.10)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -4432,19 +4434,21 @@ function toggleCollapse(parentId, parentCode) {
   } else {
     _collapsedRows.add(parentId);
   }
-  // Sayfayı yeniden render etmek yerine sadece DOM'u güncelle
-  const isCollapsed = _collapsedRows.has(parentId);
-  // Tüm child satırları bul ve gizle/göster
-  const allRows = document.querySelectorAll('[data-parent-codes]');
-  allRows.forEach(row => {
-    const parentCodes = row.getAttribute('data-parent-codes').split(',');
-    if (parentCodes.includes(parentCode)) {
-      row.classList.toggle('collapsed-hidden', isCollapsed);
-    }
-  });
-  // Toggle ikonunu güncelle
-  const toggle = document.querySelector(`[data-toggle-id="${parentId}"] .toggle-icon`);
-  if (toggle) toggle.textContent = isCollapsed ? '▶' : '▼';
+  // Katlanmış satırlar DOM'a hiç yazılmadığı için yeniden render gerekli.
+  // Artık hızlı: sadece görünen satırlar çiziliyor.
+  renderBudgetTable();
+}
+
+// Tüm ana kategorileri katla/aç
+function collapseAllBudget(collapse) {
+  _collapsedRows.clear();
+  if (collapse) {
+    // Yaprak olmayan (alt kalemi olan) tüm kalemleri kapat
+    (state.budget || []).forEach(b => {
+      if (hasChildren(b)) _collapsedRows.add(b.id);
+    });
+  }
+  renderBudgetTable();
 }
 
 // Bir satırın tüm üst kod'larını döndür
@@ -5240,9 +5244,20 @@ function getCategoryLabel(key) {
   return cat ? cat.label : 'Karma';
 }
 
+let _budgetAutoCollapsed = false;
 function renderBudgetTable() {
   const tbody = document.getElementById('budgetTableBody');
   const totalBody = document.getElementById('budgetTotalBody');
+  if (!tbody) return;
+  // PERFORMANS: Çok kalemli bütçede (>200) ilk render'da derin kalemleri katla.
+  // 2850 satır yerine ~30 üst kategori görünür → anında açılır. Kullanıcı tıklayıp açar.
+  if (!_budgetAutoCollapsed && (state.budget || []).length > 200) {
+    _budgetAutoCollapsed = true;
+    (state.budget || []).forEach(b => {
+      // Seviye 2 ve altındaki (alt kalemi olan) kalemleri kapat — üst 2 seviye görünür kalır
+      if (hasChildren(b) && (b.level || 1) >= 2) _collapsedRows.add(b.id);
+    });
+  }
   tbody.innerHTML = '';
   if (totalBody) totalBody.innerHTML = '';
   const sorted = [...state.budget].sort((a, b) => (a.code||"").localeCompare(b.code||""));
@@ -5327,14 +5342,17 @@ function renderBudgetTable() {
     else if (revize) _trStyle = 'background:rgba(184,134,61,0.04);';
 
     const parentCodes = getParentCodes(b.code);
+    let _shouldHide = false;
     if (parentCodes.length > 0) {
       _trAttr = ` data-parent-codes="${parentCodes.join(',')}"`;
-      const shouldHide = parentCodes.some(pc => {
+      _shouldHide = parentCodes.some(pc => {
         const parent = _codeMap[pc];
         return parent && _collapsedRows.has(parent.id);
       });
-      if (shouldHide) _trClass += ' collapsed-hidden';
     }
+    // PERFORMANS: Katlanmış (gizli) satırı DOM'a HİÇ yazma. Toplamlar yukarıda zaten
+    // hesaplandı (isRootBudgetItem), o yüzden atlamak güvenli. 2850 yerine görünen ~30 satır.
+    if (_shouldHide) return; // forEach — bu satırı çizme
 
     const isCollapsed = _collapsedRows.has(b.id);
     const toggleHtml = hasKids
