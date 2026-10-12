@@ -2222,7 +2222,7 @@ function _unpackFromLocal(raw) {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v9.8 (12.10)';
+const APP_BUILD = 'v9.9 (12.10)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -4839,6 +4839,14 @@ function renderTargetDateInput() {
     const today = new Date();
     el.value = today.toISOString().substring(0, 10);
   }
+  // Özet sekmesindeki alan/arsa kutularını da state'ten doldur
+  // (önceden sadece Ayarlar sekmesi dolduruyordu → Özet'te boş görünüyordu)
+  const ozT = document.getElementById('ozet-totalArea');
+  const ozS = document.getElementById('ozet-salableArea');
+  const ozL = document.getElementById('ozet-landAccountCode');
+  if (ozT) ozT.value = state.settings.totalArea || '';
+  if (ozS) ozS.value = state.settings.salableArea || '';
+  if (ozL) ozL.value = state.settings.landAccountCode || '';
 }
 
 function onTargetDateChange() {
@@ -5023,12 +5031,12 @@ function renderKpis() {
     const actNote = document.getElementById('kpi-actual-arsa');
     if (budNote) {
       budNote.textContent = (landCode && landBudTry > 0)
-        ? `Arsa hariç: ${fmtTL(totalBudgetTry - landBudTry)} · ${fmtUSD(overall.totalBudget - landBudUsd)}  |  Arsa: ${fmtTL(landBudTry)}`
+        ? `Arsa hariç: ${fmtTL(totalBudgetTry - landBudTry)} · ${fmtUSD(overall.totalBudget - landBudUsd)}  |  Arsa: ${fmtTL(landBudTry)} · ${fmtUSD(landBudUsd)}`
         : (landCode ? 'Arsa kalemi bulunamadı (kodu kontrol et)' : '');
     }
     if (actNote) {
       actNote.textContent = (landCode && landActTry > 0)
-        ? `Arsa hariç: ${fmtTL(totalActualTry - landActTry)} · ${fmtUSD(totActUsd - landActUsd)}  |  Arsa: ${fmtTL(landActTry)}`
+        ? `Arsa hariç: ${fmtTL(totalActualTry - landActTry)} · ${fmtUSD(totActUsd - landActUsd)}  |  Arsa: ${fmtTL(landActTry)} · ${fmtUSD(landActUsd)}`
         : '';
     }
   }
