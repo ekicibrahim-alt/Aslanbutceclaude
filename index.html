@@ -2181,7 +2181,7 @@ body.view-mode .lock-status * {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v9.0 (12.10)';
+const APP_BUILD = 'v9.1 (12.10)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -5161,6 +5161,11 @@ function renderBudgetTable() {
   if (totalBody) totalBody.innerHTML = '';
   const sorted = [...state.budget].sort((a, b) => (a.code||"").localeCompare(b.code||""));
   const fx = getCurrentFx();
+  // Performans: kod→kalem haritası (her satırda sorted.find taramasını önler)
+  const _codeMap = {};
+  sorted.forEach(x => { if (x.code) _codeMap[x.code] = x; });
+  // Performans: satır HTML'lerini biriktir, sonunda TEK innerHTML (2850 ayrı DOM işlemi yerine)
+  const _rowsHtml = [];
   let totalBaseUsd=0, totalBaseTry=0, totalRevUsd=0, totalRevTry=0;
   let hasAnyRevise = false; // gerçekten revize girilmiş kalem var mı?
   let totalActUsd=0, totalActTry=0, totalRemUsd=0, totalRemTry=0;
@@ -5228,19 +5233,21 @@ function renderBudgetTable() {
     else if (actUsd > 0) statusHtml = `<span class="badge badge-success">✓</span>`;
     else statusHtml = `<span style="color:var(--text-muted);font-size:11px;">—</span>`;
 
-    const tr = document.createElement('tr');
-    tr.className = `level-${b.level}`;
-    if (asilmis) tr.style.background = 'rgba(164,65,50,0.04)';
-    else if (revize) tr.style.background = 'rgba(184,134,61,0.04)';
+    // Satır HTML'i string olarak biriktirilecek (tek innerHTML — hızlı)
+    let _trClass = `level-${b.level}`;
+    let _trStyle = '';
+    let _trAttr = '';
+    if (asilmis) _trStyle = 'background:rgba(164,65,50,0.04);';
+    else if (revize) _trStyle = 'background:rgba(184,134,61,0.04);';
 
     const parentCodes = getParentCodes(b.code);
     if (parentCodes.length > 0) {
-      tr.setAttribute('data-parent-codes', parentCodes.join(','));
+      _trAttr = ` data-parent-codes="${parentCodes.join(',')}"`;
       const shouldHide = parentCodes.some(pc => {
-        const parent = sorted.find(x => x.code === pc);
+        const parent = _codeMap[pc];
         return parent && _collapsedRows.has(parent.id);
       });
-      if (shouldHide) tr.classList.add('collapsed-hidden');
+      if (shouldHide) _trClass += ' collapsed-hidden';
     }
 
     const isCollapsed = _collapsedRows.has(b.id);
@@ -5267,7 +5274,7 @@ function renderBudgetTable() {
     const remGrossUsd = effGrossUsd - actGrossUsd;
     const remGrossTry = (effGrossUsd * fx) - actGrossTry;
 
-    tr.innerHTML = `
+    _rowsHtml.push(`<tr class="${_trClass}" style="${_trStyle}"${_trAttr}>
       <td class="mono" style="font-size:12px;">${b.code}</td>
       <td>${indent}${toggleHtml}${b.name}</td>
       <td style="font-size:12px;">${b.supplier || '—'}</td>
@@ -5302,9 +5309,10 @@ function renderBudgetTable() {
         <button class="btn btn-danger" onclick="deleteBudgetItem('${b.id}')">Sil</button>
         <button class="btn btn-ghost" style="font-size:11px;padding:2px 6px;" onclick="reviseBudgetItem('${b.id}')">Revize</button>${(b.revisedHistory && b.revisedHistory.length) ? `<button class="btn btn-ghost" style="font-size:11px;padding:2px 5px;" onclick="showReviseHistory('${b.id}')" title="${b.revisedHistory.length} revize — geçmişi gör">🕘</button>` : ''}
       </td>
-    `;
-    tbody.appendChild(tr);
+    </tr>`);
   });
+  // TEK seferde DOM'a yaz (2850 ayrı appendChild yerine) — büyük hız kazancı
+  tbody.innerHTML = _rowsHtml.join('');
 
   if (sorted.length > 0) {
     const totRemUsd = (hasAnyRevise ? totalRevUsd : totalBaseUsd) - totalActUsd - totalYansUsd;
