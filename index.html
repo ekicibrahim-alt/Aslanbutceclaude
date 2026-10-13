@@ -1091,9 +1091,9 @@ body.view-mode .lock-status * {
       </div>
       <div id="unmatchedInvoiceWarning"></div>
       <div class="table-filter-wrap">
-        <input class="table-filter-input" type="text" placeholder="Filtrele... (fatura no, cari, hesap kodu, açıklama, durum)" oninput="filterTable('invoiceTableBody', this.value, this)" id="filter-invoice">
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (fatura no, cari, hesap kodu, açıklama, durum)" oninput="onInvoiceFilter(this.value)" id="filter-invoice">
         <span class="table-filter-count" id="filter-invoice-count"></span>
-        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-invoice','invoiceTableBody','filter-invoice-count')">Temizle</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearInvoiceFilter()">Temizle</button>
       </div>
       <div class="sticky-head" style="overflow: auto;">
         <table class="data-table" id="invoiceMainTable">
@@ -2236,7 +2236,7 @@ function _unpackFromLocal(raw) {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v10.1 (13.10)';
+const APP_BUILD = 'v10.2 (13.10)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -4143,8 +4143,12 @@ function isInvoiceMatched(inv) {
 }
 
 // Eşleşmeyen faturaları döndür (gerçekleşmeye girmeyen — sessiz hata riski)
+let _unmatchedCache = null, _unmatchedVer = -1;
 function getUnmatchedInvoices() {
-  return state.invoices.filter(inv => !isInvoiceMatched(inv));
+  if (_unmatchedCache && _unmatchedVer === _invDataVersion) return _unmatchedCache;
+  _unmatchedCache = state.invoices.filter(inv => !isInvoiceMatched(inv));
+  _unmatchedVer = _invDataVersion;
+  return _unmatchedCache;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -5657,7 +5661,19 @@ function getInvoiceFx(inv) {
   return getCurrentFx();
 }
 
+// calcInvoiceTotals önbelleği — fatura veya kur verisi değişmedikçe yeniden hesaplanmaz.
+// (binlerce faturada toplam/render tekrarını hızlandırır; saveState invalidate eder)
+let _calcInvCache = {}, _calcInvCacheKey = '';
 function calcInvoiceTotals(inv) {
+  const key = _invDataVersion + ':' + _fxDataVersion;
+  if (_calcInvCacheKey !== key) { _calcInvCache = {}; _calcInvCacheKey = key; }
+  const id = inv && inv.id;
+  if (id && _calcInvCache[id]) return _calcInvCache[id];
+  const r = _calcInvoiceTotalsRaw(inv);
+  if (id) _calcInvCache[id] = r;
+  return r;
+}
+function _calcInvoiceTotalsRaw(inv) {
   const net = inv.amount || 0;
   const kdvRows = inv.kdvRows || [{ rate: inv.vat ? inv.vat * 100 : 20, amount: net * (inv.vat || 0.20) }];
   const kdvTotal = kdvRows.reduce((s, r) => s + (r.amount || 0), 0);
@@ -5695,68 +5711,46 @@ function calcInvoiceTotals(inv) {
   };
 }
 
-function renderInvoiceTable() {
-  const tbody = document.getElementById('invoiceTableBody');
-  tbody.innerHTML = '';
-  const sorted = [...state.invoices].sort((a, b) => new Date(b.date) - new Date(a.date));
+// Fatura tablosu — çok sayıda fatura (binlerce) olduğunda performans için
+// yalnızca ilk N satır DOM'a basılır; toplamlar & filtre TÜM faturalar üzerinden çalışır.
+let _invFilterText = '';
+let _invShowLimit = 500;
+const INV_PAGE = 500;
 
-  // Eşleşmeyen fatura uyarı paneli
-  const warnEl = document.getElementById('unmatchedInvoiceWarning');
-  if (warnEl) {
-    const unmatched = getUnmatchedInvoices();
-    if (unmatched.length > 0) {
-      const toplam = unmatched.reduce((s, inv) => s + calcInvoiceTotals(inv).grandTotal, 0);
-      warnEl.innerHTML = `
-        <div style="padding:12px 16px;border-radius:8px;margin-bottom:12px;background:#fdecea;border:1px solid #f5c6c6;">
-          <div style="font-weight:600;font-size:13px;margin-bottom:6px;color:#a44132;">
-            ⚠ ${unmatched.length} fatura hiçbir bütçe kalemine bağlı değil (${fmtTL(toplam)})
-          </div>
-          <div style="font-size:12px;color:#6b4a3a;margin-bottom:8px;">
-            Bu faturalar gerçekleşmeye <strong>girmez</strong> — bütçe karşılaştırması eksik kalır. Hesap kodlarını kontrol et:
-          </div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;">
-            ${unmatched.map(inv => `
-              <span style="padding:3px 8px;background:white;border:1px solid #f5c6c6;border-radius:4px;font-size:11px;cursor:pointer;" onclick="editInvoice('${inv.id}')" title="Düzelt">
-                ${escapeHtml(inv.supplier || inv.invoiceNo || '?')} · <span class="mono">${inv.code || '(kod yok)'}</span> ✎
-              </span>`).join('')}
-          </div>
-        </div>`;
-    } else {
-      warnEl.innerHTML = '';
-    }
+function onInvoiceFilter(val) {
+  _invFilterText = val || '';
+  _invShowLimit = INV_PAGE; // filtre değişince baştan
+  clearTimeout(window._invFilterTimer);
+  window._invFilterTimer = setTimeout(renderInvoiceTable, 180);
+}
+function clearInvoiceFilter() {
+  const inp = document.getElementById('filter-invoice');
+  if (inp) inp.value = '';
+  _invFilterText = '';
+  _invShowLimit = INV_PAGE;
+  renderInvoiceTable();
+}
+function invShowMore() { _invShowLimit += 2000; renderInvoiceTable(); }
+function invShowAll()  { _invShowLimit = Infinity; renderInvoiceTable(); }
+
+// Tek bir faturanın satır HTML'i (hesaplanmış toplamıyla birlikte)
+function _invRowHtml(inv) {
+  const c = calcInvoiceTotals(inv);
+  const typeLabel = getCategoryLabel(inv.type);
+  const matched = isInvoiceMatched(inv);
+  const attachBadge = inv.hasAttachment
+    ? `<button class="btn btn-icon btn-ghost" onclick="viewInvoiceAttachment('${inv.id}')" title="Faturayı görüntüle" style="padding: 2px 6px;">📎</button>` : '';
+  let statusBadge;
+  if (c.overallStatus === 'paid') {
+    statusBadge = `<span class="badge badge-success" style="cursor:pointer;" onclick="quickToggleInvoiceStatus('${inv.id}')" title="Tıkla → Bekliyor'a çevir">Ödendi ✓</span>`;
+  } else if (c.overallStatus === 'partial') {
+    statusBadge = `<span class="badge badge-warning" style="cursor:pointer;" onclick="quickToggleInvoiceStatus('${inv.id}')" title="Tıkla → Ödendi yap">Kısmi →</span>`;
+  } else {
+    statusBadge = `<span class="badge badge-warning" style="cursor:pointer;" onclick="quickToggleInvoiceStatus('${inv.id}')" title="Tıkla → Ödendi yap">Bekliyor →</span>`;
   }
-
-  // Toplamları biriktir
-  let T = { net:0, kdv:0, stopaj:0, tevkifat:0, grand:0, grandUsd:0, kes:0, netOd:0, oden:0, kalan:0, kesAvans:0, kesTeminat:0, kesYansitma:0, kesCeza:0 };
-
-  sorted.forEach(inv => {
-    const c = calcInvoiceTotals(inv);
-    const typeLabel = getCategoryLabel(inv.type);
-    const matched = isInvoiceMatched(inv);
-    const attachBadge = inv.hasAttachment 
-      ? `<button class="btn btn-icon btn-ghost" onclick="viewInvoiceAttachment('${inv.id}')" title="Faturayı görüntüle" style="padding: 2px 6px;">📎</button>` : '';
-    
-    let statusBadge;
-    if (c.overallStatus === 'paid') {
-      statusBadge = `<span class="badge badge-success" style="cursor:pointer;" onclick="quickToggleInvoiceStatus('${inv.id}')" title="Tıkla → Bekliyor'a çevir">Ödendi ✓</span>`;
-    } else if (c.overallStatus === 'partial') {
-      statusBadge = `<span class="badge badge-warning" style="cursor:pointer;" onclick="quickToggleInvoiceStatus('${inv.id}')" title="Tıkla → Ödendi yap">Kısmi →</span>`;
-    } else {
-      statusBadge = `<span class="badge badge-warning" style="cursor:pointer;" onclick="quickToggleInvoiceStatus('${inv.id}')" title="Tıkla → Ödendi yap">Bekliyor →</span>`;
-    }
-    
-    const invFx = getInvoiceFx(inv);
-    const grandUsd = c.grandTotal / invFx;
-    const netUsd = c.net / invFx;
-
-    // Toplamlara ekle
-    T.net += c.net; T.kdv += c.kdvTotal; T.stopaj += c.stopajAmount; T.tevkifat += c.tevkifatAmount;
-    T.grand += c.grandTotal; T.grandUsd += grandUsd; T.kes += c.kesToplam; T.netOd += c.netOdenecek;
-    T.oden += c.totalPaid; T.kalan += c.remaining;
-    T.kesAvans += (c.kesAvans||0); T.kesTeminat += (c.kesTeminat||0); T.kesYansitma += (c.kesYansitma||0); T.kesCeza += (c.kesCeza||0);
-
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
+  const invFx = getInvoiceFx(inv);
+  const grandUsd = c.grandTotal / invFx;
+  const html = `<tr>
       <td class="mono">${inv.code ? (matched ? inv.code : `<span style="color:#a44132;" title="Hiçbir bütçe kalemine bağlı değil">${inv.code} ⚠</span>`) : '<span style="color:#a44132;" title="Hesap kodu yok">— ⚠</span>'}</td>
       <td class="mono">${inv.invoiceNo || '—'}</td>
       <td>${inv.supplier || '—'} ${attachBadge}</td>
@@ -5785,16 +5779,78 @@ function renderInvoiceTable() {
         <button class="btn btn-icon btn-ghost" onclick="editInvoice('${inv.id}')">Düzenle</button>
         <button class="btn btn-danger" onclick="deleteInvoice('${inv.id}')">Sil</button>
       </td>
-    `;
-    tbody.appendChild(tr);
-  });
+    </tr>`;
+  return { c, invFx, grandUsd, html };
+}
 
-  // TOPLAM satırı — tablonun en üstüne ekle
-  if (sorted.length > 0) {
-    const totalTr = document.createElement('tr');
-    totalTr.style.cssText = 'background:rgba(30,58,95,0.06);font-weight:700;border-bottom:2px solid var(--border-strong);position:sticky;top:0;';
-    totalTr.innerHTML = `
-      <td class="mono" colspan="6" style="font-weight:700;">TOPLAM (${sorted.length} fatura)</td>
+function renderInvoiceTable() {
+  const tbody = document.getElementById('invoiceTableBody');
+  const sorted = [...state.invoices].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  // Eşleşmeyen fatura uyarı paneli
+  const warnEl = document.getElementById('unmatchedInvoiceWarning');
+  if (warnEl) {
+    const unmatched = getUnmatchedInvoices();
+    if (unmatched.length > 0) {
+      const toplam = unmatched.reduce((s, inv) => s + calcInvoiceTotals(inv).grandTotal, 0);
+      warnEl.innerHTML = `
+        <div style="padding:12px 16px;border-radius:8px;margin-bottom:12px;background:#fdecea;border:1px solid #f5c6c6;">
+          <div style="font-weight:600;font-size:13px;margin-bottom:6px;color:#a44132;">
+            ⚠ ${unmatched.length} fatura hiçbir bütçe kalemine bağlı değil (${fmtTL(toplam)})
+          </div>
+          <div style="font-size:12px;color:#6b4a3a;margin-bottom:8px;">
+            Bu faturalar gerçekleşmeye <strong>girmez</strong> — bütçe karşılaştırması eksik kalır. Hesap kodlarını kontrol et:
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${unmatched.map(inv => `
+              <span style="padding:3px 8px;background:white;border:1px solid #f5c6c6;border-radius:4px;font-size:11px;cursor:pointer;" onclick="editInvoice('${inv.id}')" title="Düzelt">
+                ${escapeHtml(inv.supplier || inv.invoiceNo || '?')} · <span class="mono">${inv.code || '(kod yok)'}</span> ✎
+              </span>`).join('')}
+          </div>
+        </div>`;
+    } else {
+      warnEl.innerHTML = '';
+    }
+  }
+
+  if (sorted.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="24" class="empty-state">Henüz fatura/hakediş kaydı yok</td></tr>';
+    const cEl = document.getElementById('filter-invoice-count'); if (cEl) cEl.textContent = '';
+    return;
+  }
+
+  // Filtre — TÜM faturalarda ara (sadece DOM'daki satırlarda değil)
+  const ft = (_invFilterText || '').trim().toLowerCase();
+  const filtered = ft
+    ? sorted.filter(inv => (
+        (inv.code || '') + ' ' + (inv.invoiceNo || '') + ' ' + (inv.supplier || '') + ' ' +
+        (inv.desc || '') + ' ' + getCategoryLabel(inv.type)
+      ).toLowerCase().includes(ft))
+    : sorted;
+
+  // Toplamlar — filtrelenmiş TÜM faturalar üzerinden (gösterilen satırlarla sınırlı değil)
+  // Filtre yoksa, veri değişmedikçe toplamı önbellekten al (sekme tekrar açılışı hızlansın).
+  const _totKey = _invDataVersion + ':' + _fxDataVersion;
+  let T;
+  if (!ft && window._invTotals && window._invTotalsKey === _totKey) {
+    T = window._invTotals;
+  } else {
+    T = { net:0, kdv:0, stopaj:0, tevkifat:0, grand:0, grandUsd:0, kes:0, netOd:0, oden:0, kalan:0, kesAvans:0, kesTeminat:0, kesYansitma:0, kesCeza:0 };
+    filtered.forEach(inv => {
+      const c = calcInvoiceTotals(inv);
+      T.net += c.net; T.kdv += c.kdvTotal; T.stopaj += c.stopajAmount; T.tevkifat += c.tevkifatAmount;
+      T.grand += c.grandTotal; T.grandUsd += (c.grandTotal / getInvoiceFx(inv)); T.kes += c.kesToplam; T.netOd += c.netOdenecek;
+      T.oden += c.totalPaid; T.kalan += c.remaining;
+      T.kesAvans += (c.kesAvans||0); T.kesTeminat += (c.kesTeminat||0); T.kesYansitma += (c.kesYansitma||0); T.kesCeza += (c.kesCeza||0);
+    });
+    if (!ft) { window._invTotals = T; window._invTotalsKey = _totKey; }
+  }
+
+  // Yalnızca ilk N satırı DOM'a bas (performans) — tek innerHTML ile
+  const show = isFinite(_invShowLimit) ? filtered.slice(0, _invShowLimit) : filtered;
+  const rows = [];
+  rows.push(`<tr style="background:rgba(30,58,95,0.06);font-weight:700;border-bottom:2px solid var(--border-strong);">
+      <td class="mono" colspan="6" style="font-weight:700;">TOPLAM (${filtered.length}${ft ? ' / ' + sorted.length : ''} fatura)</td>
       <td class="right">${fmtTL(T.net)}</td>
       <td class="right">${fmtTL(T.kdv)}</td>
       <td class="right">${T.stopaj > 0 ? fmtTL(T.stopaj) : '—'}</td>
@@ -5810,13 +5866,21 @@ function renderInvoiceTable() {
       <td class="right" style="color:#2f6b48;">${T.oden > 0 ? fmtTL(T.oden) : '—'}</td>
       <td class="right" style="color:${T.kalan > 0.01 ? '#a44132' : '#2f6b48'};">${fmtTL(T.kalan)}</td>
       <td colspan="4"></td>
-    `;
-    tbody.insertBefore(totalTr, tbody.firstChild);
+    </tr>`);
+  for (const inv of show) rows.push(_invRowHtml(inv).html);
+  if (filtered.length > show.length) {
+    const kalan = filtered.length - show.length;
+    rows.push(`<tr><td colspan="24" style="text-align:center;padding:14px;background:var(--surface-2);color:var(--text-muted);">
+      ${filtered.length.toLocaleString('tr-TR')} faturadan ilk ${show.length.toLocaleString('tr-TR')} tanesi gösteriliyor (${kalan.toLocaleString('tr-TR')} daha var).
+      Belirli bir faturayı bulmak için <strong>yukarıdaki filtreyi</strong> kullan.
+      &nbsp;<button class="btn btn-ghost" style="font-size:11px;" onclick="invShowMore()">+2000 göster</button>
+      <button class="btn btn-ghost" style="font-size:11px;" onclick="invShowAll()">Tümünü göster (yavaş)</button>
+    </td></tr>`);
   }
-  
-  if (sorted.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="24" class="empty-state">Henüz fatura/hakediş kaydı yok</td></tr>';
-  }
+  tbody.innerHTML = rows.join('');
+
+  const cEl = document.getElementById('filter-invoice-count');
+  if (cEl) cEl.textContent = ft ? `${filtered.length} / ${sorted.length} kayıt` : `${sorted.length} kayıt`;
 }
 
 function getCollectionStatus(c) {
