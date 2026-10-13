@@ -2236,7 +2236,7 @@ function _unpackFromLocal(raw) {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v10.2 (13.10)';
+const APP_BUILD = 'v10.3 (13.10)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -5714,8 +5714,20 @@ function _calcInvoiceTotalsRaw(inv) {
 // Fatura tablosu — çok sayıda fatura (binlerce) olduğunda performans için
 // yalnızca ilk N satır DOM'a basılır; toplamlar & filtre TÜM faturalar üzerinden çalışır.
 let _invFilterText = '';
-let _invShowLimit = 500;
-const INV_PAGE = 500;
+let _invShowLimit = 200;
+let _invJumpId = null;   // "uyarıya tıkla → o faturaya git" için
+const INV_PAGE = 200;
+
+// Belirli bir faturaya git: Faturalar sekmesini aç, o satırı göster, kaydır ve vurgula
+function jumpToInvoice(id) {
+  _invJumpId = id;
+  _invFilterText = '';
+  const inp = document.getElementById('filter-invoice');
+  if (inp) inp.value = '';
+  _invShowLimit = INV_PAGE;
+  if (typeof switchTab === 'function') switchTab('faturalar'); // sekmeyi aç + render
+  else renderInvoiceTable();
+}
 
 function onInvoiceFilter(val) {
   _invFilterText = val || '';
@@ -5750,7 +5762,7 @@ function _invRowHtml(inv) {
   }
   const invFx = getInvoiceFx(inv);
   const grandUsd = c.grandTotal / invFx;
-  const html = `<tr>
+  const html = `<tr data-invid="${inv.id}">
       <td class="mono">${inv.code ? (matched ? inv.code : `<span style="color:#a44132;" title="Hiçbir bütçe kalemine bağlı değil">${inv.code} ⚠</span>`) : '<span style="color:#a44132;" title="Hesap kodu yok">— ⚠</span>'}</td>
       <td class="mono">${inv.invoiceNo || '—'}</td>
       <td>${inv.supplier || '—'} ${attachBadge}</td>
@@ -5803,8 +5815,8 @@ function renderInvoiceTable() {
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:6px;">
             ${unmatched.map(inv => `
-              <span style="padding:3px 8px;background:white;border:1px solid #f5c6c6;border-radius:4px;font-size:11px;cursor:pointer;" onclick="editInvoice('${inv.id}')" title="Düzelt">
-                ${escapeHtml(inv.supplier || inv.invoiceNo || '?')} · <span class="mono">${inv.code || '(kod yok)'}</span> ✎
+              <span style="padding:3px 8px;background:white;border:1px solid #f5c6c6;border-radius:4px;font-size:11px;cursor:pointer;" onclick="jumpToInvoice('${inv.id}')" title="Bu faturaya git (listede göster)">
+                ${escapeHtml(inv.supplier || inv.invoiceNo || '?')} · <span class="mono">${inv.code || '(kod yok)'}</span> →
               </span>`).join('')}
           </div>
         </div>`;
@@ -5848,6 +5860,11 @@ function renderInvoiceTable() {
 
   // Yalnızca ilk N satırı DOM'a bas (performans) — tek innerHTML ile
   const show = isFinite(_invShowLimit) ? filtered.slice(0, _invShowLimit) : filtered;
+  // "Faturaya git" hedefi gösterilenler arasında değilse, en üste ekle (görünsün)
+  if (_invJumpId && !show.some(i => i.id === _invJumpId)) {
+    const t = filtered.find(i => i.id === _invJumpId);
+    if (t) show.unshift(t);
+  }
   const rows = [];
   rows.push(`<tr style="background:rgba(30,58,95,0.06);font-weight:700;border-bottom:2px solid var(--border-strong);">
       <td class="mono" colspan="6" style="font-weight:700;">TOPLAM (${filtered.length}${ft ? ' / ' + sorted.length : ''} fatura)</td>
@@ -5881,6 +5898,21 @@ function renderInvoiceTable() {
 
   const cEl = document.getElementById('filter-invoice-count');
   if (cEl) cEl.textContent = ft ? `${filtered.length} / ${sorted.length} kayıt` : `${sorted.length} kayıt`;
+
+  // "Faturaya git": hedef satırı kaydır ve kısa süre vurgula
+  if (_invJumpId) {
+    const jid = _invJumpId; _invJumpId = null;
+    requestAnimationFrame(() => {
+      const row = tbody.querySelector(`tr[data-invid="${jid}"]`);
+      if (row) {
+        row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        row.style.transition = 'background-color 0.4s';
+        const prev = row.style.backgroundColor;
+        row.style.backgroundColor = 'rgba(184,134,61,0.45)';
+        setTimeout(() => { row.style.backgroundColor = prev || ''; }, 2500);
+      }
+    });
+  }
 }
 
 function getCollectionStatus(c) {
