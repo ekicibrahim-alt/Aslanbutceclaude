@@ -2236,7 +2236,7 @@ function _unpackFromLocal(raw) {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v10.3 (13.10)';
+const APP_BUILD = 'v10.4 (13.10)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -4575,7 +4575,16 @@ function hasChildren(b) {
 }
 
 // Toplam proje seviyesinde ilerleme
+// computeOverallProgress önbelleği — veri veya değerlendirme tarihi değişmedikçe yeniden hesaplanmaz
+let _ovpCache = null, _ovpKey = '';
 function computeOverallProgress() {
+  const key = _budgetDataVersion + '|' + _invDataVersion + '|' + _fxDataVersion + '|' + getTargetDate();
+  if (_ovpCache && _ovpKey === key) return _ovpCache;
+  const r = _computeOverallProgressRaw();
+  _ovpCache = r; _ovpKey = key;
+  return r;
+}
+function _computeOverallProgressRaw() {
   const target = getTargetDate();
   const leaves = getLeafBudgetItems();
   const fx = getCurrentFx();
@@ -4719,7 +4728,15 @@ function computeOverallProgress() {
 }
 
 // Kategori bazlı bütçe & gerçekleşme (kullanıcı tanımlı kategoriler)
+let _catBrkCache = null, _catBrkKey = '';
 function computeCategoryBreakdown() {
+  const key = _budgetDataVersion + '|' + _invDataVersion + '|' + _fxDataVersion + '|' + getTargetDate();
+  if (_catBrkCache && _catBrkKey === key) return _catBrkCache;
+  const r = _computeCategoryBreakdownRaw();
+  _catBrkCache = r; _catBrkKey = key;
+  return r;
+}
+function _computeCategoryBreakdownRaw() {
   const categories = {};
   state.settings.categories.forEach(c => {
     categories[c.key] = { budgetUsd: 0, budgetTry: 0, actualUsd: 0, actualTry: 0, faturalananUsd: 0, faturalananTry: 0, label: c.label, color: c.color };
@@ -5961,7 +5978,16 @@ function renderCollectionTable() {
   }
 }
 
+// computeCashflow önbelleği — veri değişmedikçe yeniden hesaplanmaz (Özet'te birden çok kez çağrılıyor)
+let _cfCache = null, _cfKey = '';
 function computeCashflow() {
+  const key = _budgetDataVersion + '|' + _invDataVersion + '|' + _fxDataVersion;
+  if (_cfCache && _cfKey === key) return _cfCache;
+  const r = _computeCashflowRaw();
+  _cfCache = r; _cfKey = key;
+  return r;
+}
+function _computeCashflowRaw() {
   const months = getMonthsInRange(state.settings.startMonth, state.settings.endMonth);
   const data = months.map(m => ({
     month: m,
