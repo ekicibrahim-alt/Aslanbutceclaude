@@ -2461,7 +2461,7 @@ function _unpackFromLocal(raw) {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v10.12 (10.11)';
+const APP_BUILD = 'v10.13 (10.11)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -7925,7 +7925,8 @@ function generateInstallments() {
       amount: perInstallment,
       paidAmount: old ? (old.paidAmount || 0) : 0,
       paidDate: old ? (old.paidDate || '') : '',
-      status: old ? (old.status || 'pending') : 'pending'
+      status: old ? (old.status || 'pending') : 'pending',
+      aciklama: old ? (old.aciklama || '') : ''
     });
   }
   
@@ -7956,7 +7957,7 @@ function renderInstallmentRows() {
     const isPaid = inst.status === 'paid';
     const remaining = (inst.amount || 0) - (inst.paidAmount || 0);
     const div = document.createElement('div');
-    div.style.cssText = 'display: grid; grid-template-columns: 28px 125px 130px 130px 125px 110px 90px; gap: 8px; align-items: center; margin-bottom: 8px; padding: 8px; min-width: 760px; background: ' + (isPaid ? 'rgba(47,107,72,0.08)' : 'white') + '; border: 1px solid var(--border); border-radius: 6px;';
+    div.style.cssText = 'display: grid; grid-template-columns: 28px 125px 130px 130px 125px 110px 90px 170px; gap: 8px; align-items: center; margin-bottom: 8px; padding: 8px; min-width: 930px; background: ' + (isPaid ? 'rgba(47,107,72,0.08)' : 'white') + '; border: 1px solid var(--border); border-radius: 6px;';
     div.innerHTML = `
       <span style="font-weight: 600; color: var(--text-muted); font-size: 12px;">#${idx + 1}</span>
       <div>
@@ -7991,6 +7992,10 @@ function renderInstallmentRows() {
           <option value="pending" ${inst.status !== 'paid' ? 'selected' : ''}>Bekliyor</option>
           <option value="paid" ${inst.status === 'paid' ? 'selected' : ''}>Ödendi</option>
         </select>
+      </div>
+      <div>
+        <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">Açıklama (ödeme nedeni)</div>
+        <input type="text" value="${escapeHtml(inst.aciklama || '')}" oninput="invoiceInstallments[${idx}].aciklama = this.value" placeholder="ör. OG deplase 1.no hak" style="font-size: 12px; padding: 4px; width: 100%; box-sizing: border-box;">
       </div>
     `;
     container.appendChild(div);
@@ -9777,12 +9782,13 @@ function getCariEkstre(b) {
     const c = calcInvoiceTotals(inv);
     const no = inv.invoiceNo || '';
     // Hakediş → Kesilen Fatura
-    cari.push({ tarih: inv.date || inv.dueDate || '', no, aciklama: 'Hakediş', verilenCek: 0, kesilenFatura: c.grandTotal || 0, kesinti: 0, odenen: 0 });
+    const hakAciklama = (inv.desc && inv.desc.trim()) ? inv.desc.trim() : 'Hakediş';
+    cari.push({ tarih: inv.date || inv.dueDate || '', no, aciklama: hakAciklama, verilenCek: 0, kesilenFatura: c.grandTotal || 0, kesinti: 0, odenen: 0 });
     // Kesintiler → Kesinti Toplamı (ayrı satırlar)
     const kesList = [['Yansıtma', c.kesYansitma], ['Teminat kesintisi', c.kesTeminat], ['Stopaj', c.stopajAmount], ['Tevkifat', c.tevkifatAmount], ['Ceza', c.kesCeza], ['Avans kesintisi', c.kesAvans]];
     kesList.forEach(([ad, t]) => { if ((t || 0) > 0.005) cari.push({ tarih: inv.date || '', no, aciklama: ad, verilenCek: 0, kesilenFatura: 0, kesinti: t, odenen: 0 }); });
     // Ödemeler → Ödenen
-    (inv.installments || []).forEach(t => { if ((t.paidAmount || 0) > 0.005) cari.push({ tarih: t.paidDate || inv.date || '', no, aciklama: 'Taksit ödeme', verilenCek: 0, kesilenFatura: 0, kesinti: 0, odenen: t.paidAmount }); });
+    (inv.installments || []).forEach(t => { if ((t.paidAmount || 0) > 0.005) cari.push({ tarih: t.paidDate || inv.date || '', no, aciklama: (t.aciklama && t.aciklama.trim()) ? t.aciklama.trim() : 'Taksit ödeme', verilenCek: 0, kesilenFatura: 0, kesinti: 0, odenen: t.paidAmount }); });
     // Avans mahsubu → AVANS HESABI (Fatura(Hakediş) bağlamı + Avans Kesintisi)
     if ((c.kesAvans || 0) > 0.005) avans.push({ tarih: inv.date || '', no, aciklama: 'Avans kesintisi', verilenCek: 0, faturaHakedis: c.grandTotal || 0, avansKesintisi: c.kesAvans, odenen: 0 });
   });
