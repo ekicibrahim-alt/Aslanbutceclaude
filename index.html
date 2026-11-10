@@ -2371,7 +2371,7 @@ function _unpackFromLocal(raw) {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v10.5 (10.11)';
+const APP_BUILD = 'v10.6 (10.11)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -6368,10 +6368,21 @@ function renderKasa() {
   }
   // En yeni üstte göster (bakiye kronolojik hesaplandı; her satırın bakiyesi o günkü bakiye)
   const rows = [];
+  // TOPLAM satırı — en üstte
+  rows.push(`<tr style="background:rgba(30,58,95,0.06);font-weight:700;border-bottom:2px solid var(--border-strong);">
+      <td colspan="3" style="font-weight:700;">TOPLAM (${k.hareketler.length} hareket)</td>
+      <td class="right" style="color:#2f6b48;">${fmtTL(o.girisTl)}</td>
+      <td class="right" style="color:#2f6b48;font-size:11px;">${fmtUSD(o.girisUsd)}</td>
+      <td class="right" style="color:#a44132;">${fmtTL(o.cikisTl)}</td>
+      <td class="right" style="color:#a44132;font-size:11px;">${fmtUSD(o.cikisUsd)}</td>
+      <td class="right" style="color:${o.bakiyeTl < 0 ? '#a44132' : '#1e3a5f'};">${fmtTL(o.bakiyeTl)}</td>
+      <td class="right" style="font-size:11px;color:var(--text-muted);">${fmtUSD(o.bakiyeUsd)}</td>
+      <td></td>
+    </tr>`);
   for (let i = k.hareketler.length - 1; i >= 0; i--) {
     const m = k.hareketler[i];
     const isG = m.yon === 'giris';
-    const editBtn = m._kid ? `<button class="btn btn-icon btn-ghost" onclick="editKasaGiris('${m._kid}')">Düzenle</button>` : '';
+    const editBtn = m._kid ? `<button class="btn btn-icon btn-ghost" onclick="editKasaGiris('${m._kid}')">Düzenle</button> <button class="btn btn-danger" onclick="deleteKasaGirisRow('${m._kid}')">Sil</button>` : '';
     rows.push(`<tr>
       <td class="center">${fmtDate(m.tarih)}</td>
       <td>${escapeHtml(m.ad)}</td>
@@ -6450,6 +6461,18 @@ async function deleteKasaGiris() {
   state.kasaGirisleri = (state.kasaGirisleri || []).filter(x => String(x.id) !== String(id));
   await saveState();
   closeKasaGirisModal();
+  renderKasa();
+  if (typeof renderKpis === 'function') renderKpis();
+}
+// Tablodan doğrudan silme (elle girilen ortak/öz kaynak satırları için)
+async function deleteKasaGirisRow(id) {
+  if (!requireEdit()) return;
+  const k = (state.kasaGirisleri || []).find(x => String(x.id) === String(id));
+  if (!k) return;
+  const etiket = (k.tur === 'ortak' ? 'Ortak katkısı' : 'Öz kaynak') + ' · ' + (k.ad || '') + ' · ' + fmtTL(k.tutar || 0);
+  if (!confirm(`Bu kasa girişi silinsin mi?\n\n${etiket}`)) return;
+  state.kasaGirisleri = (state.kasaGirisleri || []).filter(x => String(x.id) !== String(id));
+  await saveState();
   renderKasa();
   if (typeof renderKpis === 'function') renderKpis();
 }
