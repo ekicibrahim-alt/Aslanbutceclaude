@@ -732,6 +732,7 @@ body.view-mode .lock-status * {
     <button class="tab-btn" data-tab="kesintiler" onclick="switchTab('kesintiler')">Kesintiler</button>
     <button class="tab-btn" data-tab="tahsilat" onclick="switchTab('tahsilat')">Satış & Tahsilat</button>
     <button class="tab-btn" data-tab="nakit" onclick="switchTab('nakit')">Nakit Akış</button>
+    <button class="tab-btn" data-tab="kasa" onclick="switchTab('kasa')">Kasa</button>
     <button class="tab-btn" data-tab="ayarlar" onclick="switchTab('ayarlar')">Ayarlar</button>
   </nav>
 
@@ -854,6 +855,43 @@ body.view-mode .lock-status * {
         </thead>
         <tbody id="categoryTableBody"></tbody>
       </table>
+    </div>
+
+    <!-- KASA / PARA ÇIKIŞI ÖZETİ -->
+    <div class="section">
+      <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <h2 class="section-title" style="margin:0;">Kasa — Fiili Para Hareketi</h2>
+        <button class="btn btn-ghost" style="font-size:11px;" onclick="switchTab('kasa')">Kasa sekmesini aç →</button>
+      </div>
+      <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-top:8px;">
+        <div class="kpi-card danger">
+          <div class="label">Toplam Para Çıkışı (avans dahil)</div>
+          <div class="value" id="ozet-kasa-cikis-try">—</div>
+          <div class="value-secondary" id="ozet-kasa-cikis-usd">—</div>
+        </div>
+        <div class="kpi-card success">
+          <div class="label">Toplam Giriş</div>
+          <div class="value" id="ozet-kasa-giris-try">—</div>
+          <div class="value-secondary" id="ozet-kasa-giris-usd">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">Kasa Bakiyesi</div>
+          <div class="value" id="ozet-kasa-bakiye-try">—</div>
+          <div class="value-secondary" id="ozet-kasa-bakiye-usd">—</div>
+        </div>
+      </div>
+      <details style="margin-top:10px;">
+        <summary style="cursor:pointer;font-size:12px;color:var(--accent);font-weight:500;padding:6px 0;">▸ Çıkış kırılımı (avans · hakediş · teminat iadesi)</summary>
+        <table class="data-table" style="margin-top:6px;">
+          <tbody id="ozet-kasa-cikis-detay"></tbody>
+        </table>
+      </details>
+      <details style="margin-top:4px;">
+        <summary style="cursor:pointer;font-size:12px;color:var(--accent);font-weight:500;padding:6px 0;">▸ Giriş kırılımı (tahsilat · ortak · öz kaynak)</summary>
+        <table class="data-table" style="margin-top:6px;">
+          <tbody id="ozet-kasa-giris-detay"></tbody>
+        </table>
+      </details>
     </div>
 
     <!-- m² Maliyetler -->
@@ -1499,6 +1537,68 @@ body.view-mode .lock-status * {
       </div>
     </div>
   </section>
+
+  <!-- KASA TAB -->
+  <section class="tab-content" data-tab-content="kasa">
+    <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr);">
+      <div class="kpi-card success">
+        <div class="label">Toplam Giriş (kasaya giren)</div>
+        <div class="value" id="kasa-giris-try">—</div>
+        <div class="value-secondary" id="kasa-giris-usd">—</div>
+      </div>
+      <div class="kpi-card danger">
+        <div class="label">Toplam Çıkış (cepten çıkan)</div>
+        <div class="value" id="kasa-cikis-try">—</div>
+        <div class="value-secondary" id="kasa-cikis-usd">—</div>
+        <div class="value-note" id="kasa-cikis-note" style="margin-top:4px;"></div>
+      </div>
+      <div class="kpi-card">
+        <div class="label">Kasa Bakiyesi (eldeki nakit)</div>
+        <div class="value" id="kasa-bakiye-try">—</div>
+        <div class="value-secondary" id="kasa-bakiye-usd">—</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div>
+          <h2 class="section-title" style="margin:0;">Kasa Hareketleri</h2>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Fiilen giren/çıkan para · banka ekstresi gibi, kümülatif bakiyeli</div>
+        </div>
+        <button class="btn btn-primary" onclick="openKasaGirisModal()">+ Giriş Ekle (ortak / öz kaynak)</button>
+      </div>
+      <div class="table-filter-wrap">
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (firma, tür)" oninput="filterTable('kasaTableBody', this.value, this)" id="filter-kasa">
+        <span class="table-filter-count" id="filter-kasa-count"></span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-kasa','kasaTableBody','filter-kasa-count')">Temizle</button>
+      </div>
+      <div class="sticky-head" style="overflow: auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th rowspan="2">Tarih</th>
+              <th rowspan="2">Firma / Kaynak</th>
+              <th rowspan="2">Tür</th>
+              <th class="right" colspan="2" style="border-bottom:1px solid var(--border);background:rgba(47,107,72,0.05);">Giriş</th>
+              <th class="right" colspan="2" style="border-bottom:1px solid var(--border);background:rgba(164,65,50,0.05);">Çıkış</th>
+              <th class="right" colspan="2" style="border-bottom:1px solid var(--border);background:rgba(30,58,95,0.05);">Bakiye</th>
+              <th class="center" rowspan="2"></th>
+            </tr>
+            <tr>
+              <th class="right" style="font-size:10px;color:#2f6b48;background:rgba(47,107,72,0.05);">TL</th>
+              <th class="right" style="font-size:10px;color:#2f6b48;background:rgba(47,107,72,0.05);">USD</th>
+              <th class="right" style="font-size:10px;color:#a44132;background:rgba(164,65,50,0.05);">TL</th>
+              <th class="right" style="font-size:10px;color:#a44132;background:rgba(164,65,50,0.05);">USD</th>
+              <th class="right" style="font-size:10px;color:#1e3a5f;background:rgba(30,58,95,0.05);">TL</th>
+              <th class="right" style="font-size:10px;color:#1e3a5f;background:rgba(30,58,95,0.05);">USD</th>
+            </tr>
+          </thead>
+          <tbody id="kasaTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
   <section class="tab-content" data-tab-content="ayarlar">
     <div class="section">
       <div class="section-header">
@@ -2081,6 +2181,41 @@ body.view-mode .lock-status * {
   </div>
 </div>
 
+<!-- KASA GİRİŞ MODAL (ortak katkısı / öz kaynak) -->
+<div class="modal-overlay" id="kasaGirisModal">
+  <div class="modal">
+    <h3 class="modal-title" id="kasaGirisModalTitle">Kasa Girişi Ekle</h3>
+    <input type="hidden" id="kg-id">
+    <div class="form-row form-row-2">
+      <div class="form-field"><label>Tarih *</label><input type="date" id="kg-tarih"></div>
+      <div class="form-field"><label>Tür *</label>
+        <select id="kg-tur">
+          <option value="ortak">Ortak katkısı</option>
+          <option value="ozkaynak">Öz kaynak</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row form-row-2">
+      <div class="form-field"><label>Kaynak / Ad</label><input type="text" id="kg-ad" placeholder="ör. ortak adı, kendi kaynağım"></div>
+      <div class="form-field"><label>Para Birimi</label>
+        <select id="kg-currency">
+          <option value="TRY">TL</option>
+          <option value="USD">USD</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row form-row-2">
+      <div class="form-field"><label>Tutar *</label><input type="number" id="kg-tutar" step="0.01" placeholder="0"></div>
+      <div class="form-field"><label>Not</label><input type="text" id="kg-not" placeholder="açıklama (opsiyonel)"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="kg-delete" style="margin-right:auto;display:none;" onclick="deleteKasaGiris()">Sil</button>
+      <button class="btn btn-ghost" onclick="closeKasaGirisModal()">İptal</button>
+      <button class="btn btn-primary" onclick="saveKasaGiris()">Kaydet</button>
+    </div>
+  </div>
+</div>
+
 <!-- DEDUCTION MODAL -->
 <div class="modal-overlay" id="deductionModal">
   <div class="modal">
@@ -2236,7 +2371,7 @@ function _unpackFromLocal(raw) {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v10.4 (13.10)';
+const APP_BUILD = 'v10.5 (10.11)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -2288,6 +2423,7 @@ const DEFAULT_PROJECT = {
   teminatMektuplari: [],
   avanslar: [],
   teminatIadeleri: [],
+  kasaGirisleri: [],
   program: {},
   lastModified: 0
 };
@@ -3081,6 +3217,7 @@ function applyProjectMigrations(p) {
     return a;
   });
   p.teminatIadeleri = p.teminatIadeleri || [];
+  p.kasaGirisleri = p.kasaGirisleri || [];  // ortak katkısı + öz kaynak girişleri (kasa)
   p.settings.uyariConfig = p.settings.uyariConfig || { browser: false, email: false, serviceId: '', templateId: '', publicKey: '', toEmail: '' };
   if (p.settings.defaultKdvRate == null) p.settings.defaultKdvRate = 20;
   // Yaprak kalemlere KDV oranı varsayılanı (yoksa)
@@ -4814,13 +4951,14 @@ function renderAll() {
 function renderTab(tabName) {
   try {
     switch(tabName) {
-      case 'ozet': renderTargetDateInput(); renderKpis(); renderCategoryBreakdown(); renderM2Metrics(); renderMainItems(); renderCharts(); break;
+      case 'ozet': renderTargetDateInput(); renderKpis(); renderOzetKasa(); renderCategoryBreakdown(); renderM2Metrics(); renderMainItems(); renderCharts(); break;
       case 'butce': renderBudgetTable(); break;
       case 'program': renderProgramTable(); break;
       case 'faturalar': renderInvoiceTable(); break;
       case 'kesintiler': renderDeductionsAll(); break;
       case 'tahsilat': renderCollectionTable(); break;
       case 'nakitakis': case 'nakit': renderCashflowTable(); break;
+      case 'kasa': renderKasa(); break;
       case 'ayarlar': renderSettings(); break;
     }
     reapplyFilters();
@@ -6117,6 +6255,205 @@ function _computeCashflowRaw() {
   return data;
 }
 
+// ─────────────────────────────────────────────────────────────
+// KASA (nakit defteri) — fiilen cepten çıkan / kasaya giren para
+//   ÇIKIŞ: avanslar (verildiği gün) + hakediş ödemeleri (ödendiği gün, net)
+//          + teminat iadeleri (iade günü)
+//   GİRİŞ: satış tahsilatları (tahsil edildiği gün) + ortak katkısı + öz kaynak
+//   Bakiye = Σgiriş − Σçıkış (kümülatif)
+// ─────────────────────────────────────────────────────────────
+let _kasaCache = null, _kasaKey = '';
+function computeKasa() {
+  const key = _budgetDataVersion + '|' + _invDataVersion + '|' + _fxDataVersion;
+  if (_kasaCache && _kasaKey === key) return _kasaCache;
+
+  const mv = [];
+  const add = (tarih, ad, tur, yon, tl, fxHint, kid) => {
+    if (!tl || Math.abs(tl) < 0.005) return;
+    const fx = (fxHint && fxHint > 0) ? fxHint : (getFxForDate(tarih) || getCurrentFx());
+    mv.push({ tarih: tarih || '', ad: ad || '—', tur, yon, tl: tl, usd: fx > 0 ? tl / fx : 0, _kid: kid || null });
+  };
+
+  // ── ÇIKIŞLAR ──
+  // Avanslar (her giriş kendi günü, kendi kuru)
+  (state.avanslar || []).forEach(av => {
+    const girisler = (av.girisler && av.girisler.length) ? av.girisler : [{ tarih: av.tarih, tutar: av.tutar, fx: 0 }];
+    girisler.forEach(g => add(g.tarih, av.supplier, 'Avans', 'cikis', g.tutar || 0, g.fx));
+  });
+  // Hakediş ödemeleri — yalnızca FİİLEN ÖDENEN taksitler (net), ödeme günü
+  (state.invoices || []).forEach(inv => {
+    const insts = inv.installments || [];
+    const invFx = getInvoiceFx(inv);
+    insts.forEach(t => {
+      if ((t.paidAmount || 0) > 0.005) add(t.paidDate || inv.dueDate || inv.date, inv.supplier, 'Hakediş', 'cikis', t.paidAmount, invFx);
+    });
+  });
+  // Teminat iadeleri (iade günü)
+  (state.teminatIadeleri || []).forEach(ti => add(ti.tarih, ti.supplier, 'Teminat iadesi', 'cikis', ti.tutar || 0));
+
+  // ── GİRİŞLER ──
+  // Satış tahsilatları — gerçekleşen (tahsil edildiği gün)
+  (state.collections || []).forEach(c => {
+    if ((c.actualAmount || 0) > 0.005) add(c.actualDate || c.dueDate, c.customer, 'Tahsilat', 'giris', c.actualAmount);
+  });
+  // Ortak katkısı + öz kaynak (elle girilen kasa girişleri)
+  (state.kasaGirisleri || []).forEach(k => {
+    const fx = getFxForDate(k.tarih) || getCurrentFx();
+    const tl = (k.currency === 'USD') ? (k.tutar || 0) * fx : (k.tutar || 0);
+    add(k.tarih, k.ad, k.tur === 'ortak' ? 'Ortak katkısı' : 'Öz kaynak', 'giris', tl, fx, k.id);
+  });
+
+  // Tarihe göre sırala + kümülatif bakiye
+  mv.sort((a, b) => (a.tarih < b.tarih ? -1 : a.tarih > b.tarih ? 1 : 0));
+  let bTl = 0, bUsd = 0;
+  const oz = { girisTl: 0, girisUsd: 0, cikisTl: 0, cikisUsd: 0,
+    avansTl: 0, hakedisTl: 0, teminatIadeTl: 0, tahsilatTl: 0, ortakTl: 0, ozkaynakTl: 0,
+    avansUsd: 0, hakedisUsd: 0, teminatIadeUsd: 0, tahsilatUsd: 0, ortakUsd: 0, ozkaynakUsd: 0 };
+  mv.forEach(m => {
+    if (m.yon === 'giris') { bTl += m.tl; bUsd += m.usd; oz.girisTl += m.tl; oz.girisUsd += m.usd; }
+    else { bTl -= m.tl; bUsd -= m.usd; oz.cikisTl += m.tl; oz.cikisUsd += m.usd; }
+    m.bakiyeTl = bTl; m.bakiyeUsd = bUsd;
+    if (m.tur === 'Avans') { oz.avansTl += m.tl; oz.avansUsd += m.usd; }
+    else if (m.tur === 'Hakediş') { oz.hakedisTl += m.tl; oz.hakedisUsd += m.usd; }
+    else if (m.tur === 'Teminat iadesi') { oz.teminatIadeTl += m.tl; oz.teminatIadeUsd += m.usd; }
+    else if (m.tur === 'Tahsilat') { oz.tahsilatTl += m.tl; oz.tahsilatUsd += m.usd; }
+    else if (m.tur === 'Ortak katkısı') { oz.ortakTl += m.tl; oz.ortakUsd += m.usd; }
+    else if (m.tur === 'Öz kaynak') { oz.ozkaynakTl += m.tl; oz.ozkaynakUsd += m.usd; }
+  });
+  oz.bakiyeTl = bTl; oz.bakiyeUsd = bUsd;
+
+  _kasaCache = { hareketler: mv, ozet: oz };
+  _kasaKey = key;
+  return _kasaCache;
+}
+
+function renderOzetKasa() {
+  const o = computeKasa().ozet;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('ozet-kasa-cikis-try', fmtTL(o.cikisTl)); set('ozet-kasa-cikis-usd', fmtUSD(o.cikisUsd));
+  set('ozet-kasa-giris-try', fmtTL(o.girisTl)); set('ozet-kasa-giris-usd', fmtUSD(o.girisUsd));
+  set('ozet-kasa-bakiye-try', fmtTL(o.bakiyeTl)); set('ozet-kasa-bakiye-usd', fmtUSD(o.bakiyeUsd));
+  const bEl = document.getElementById('ozet-kasa-bakiye-try'); if (bEl) bEl.style.color = o.bakiyeTl < 0 ? 'var(--danger)' : '';
+  const row = (ad, tl, usd) => `<tr><td>${ad}</td><td class="right">${fmtTL(tl)}</td><td class="right" style="color:var(--text-muted);font-size:11px;">${fmtUSD(usd)}</td></tr>`;
+  const cd = document.getElementById('ozet-kasa-cikis-detay');
+  if (cd) cd.innerHTML = row('Avanslar', o.avansTl, o.avansUsd) + row('Hakediş ödemeleri (net)', o.hakedisTl, o.hakedisUsd) + row('Teminat iadeleri', o.teminatIadeTl, o.teminatIadeUsd) + `<tr style="font-weight:700;border-top:1px solid var(--border-strong);"><td>TOPLAM ÇIKIŞ</td><td class="right">${fmtTL(o.cikisTl)}</td><td class="right" style="font-size:11px;">${fmtUSD(o.cikisUsd)}</td></tr>`;
+  const gd = document.getElementById('ozet-kasa-giris-detay');
+  if (gd) gd.innerHTML = row('Satış tahsilatları', o.tahsilatTl, o.tahsilatUsd) + row('Ortak katkısı', o.ortakTl, o.ortakUsd) + row('Öz kaynak', o.ozkaynakTl, o.ozkaynakUsd) + `<tr style="font-weight:700;border-top:1px solid var(--border-strong);"><td>TOPLAM GİRİŞ</td><td class="right">${fmtTL(o.girisTl)}</td><td class="right" style="font-size:11px;">${fmtUSD(o.girisUsd)}</td></tr>`;
+}
+
+function renderKasa() {
+  const k = computeKasa();
+  const o = k.ozet;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('kasa-giris-try', fmtTL(o.girisTl)); set('kasa-giris-usd', fmtUSD(o.girisUsd));
+  set('kasa-cikis-try', fmtTL(o.cikisTl)); set('kasa-cikis-usd', fmtUSD(o.cikisUsd));
+  set('kasa-bakiye-try', fmtTL(o.bakiyeTl)); set('kasa-bakiye-usd', fmtUSD(o.bakiyeUsd));
+  const note = document.getElementById('kasa-cikis-note');
+  if (note) {
+    const parts = [];
+    if (o.avansTl > 0) parts.push('Avans ' + fmtTL(o.avansTl));
+    if (o.hakedisTl > 0) parts.push('Hakediş ' + fmtTL(o.hakedisTl));
+    if (o.teminatIadeTl > 0) parts.push('Teminat iade ' + fmtTL(o.teminatIadeTl));
+    note.textContent = parts.join(' · ');
+  }
+  const bEl = document.getElementById('kasa-bakiye-try');
+  if (bEl) bEl.style.color = o.bakiyeTl < 0 ? 'var(--danger)' : '';
+
+  const tbody = document.getElementById('kasaTableBody');
+  if (!tbody) return;
+  if (k.hareketler.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" class="empty-state">Henüz kasa hareketi yok. Avans, "ödendi" işaretli hakediş, gerçekleşen tahsilat veya ortak/öz kaynak girişi ekleyince burada görünür.</td></tr>';
+    const cEl0 = document.getElementById('filter-kasa-count'); if (cEl0) cEl0.textContent = '';
+    return;
+  }
+  // En yeni üstte göster (bakiye kronolojik hesaplandı; her satırın bakiyesi o günkü bakiye)
+  const rows = [];
+  for (let i = k.hareketler.length - 1; i >= 0; i--) {
+    const m = k.hareketler[i];
+    const isG = m.yon === 'giris';
+    const editBtn = m._kid ? `<button class="btn btn-icon btn-ghost" onclick="editKasaGiris('${m._kid}')">Düzenle</button>` : '';
+    rows.push(`<tr>
+      <td class="center">${fmtDate(m.tarih)}</td>
+      <td>${escapeHtml(m.ad)}</td>
+      <td><span class="tag">${m.tur}</span></td>
+      <td class="right" style="color:#2f6b48;">${isG ? fmtTL(m.tl) : '—'}</td>
+      <td class="right" style="color:#2f6b48;font-size:11px;">${isG ? fmtUSD(m.usd) : '—'}</td>
+      <td class="right" style="color:#a44132;">${!isG ? fmtTL(m.tl) : '—'}</td>
+      <td class="right" style="color:#a44132;font-size:11px;">${!isG ? fmtUSD(m.usd) : '—'}</td>
+      <td class="right" style="font-weight:600;color:${m.bakiyeTl < 0 ? '#a44132' : '#1e3a5f'};">${fmtTL(m.bakiyeTl)}</td>
+      <td class="right" style="font-size:11px;color:var(--text-muted);">${fmtUSD(m.bakiyeUsd)}</td>
+      <td class="center">${editBtn}</td>
+    </tr>`);
+  }
+  tbody.innerHTML = rows.join('');
+  const cEl = document.getElementById('filter-kasa-count'); if (cEl) cEl.textContent = k.hareketler.length + ' hareket';
+}
+
+// ── Kasa girişi (ortak katkısı / öz kaynak) modal ──
+function openKasaGirisModal() {
+  if (!requireEdit()) return;
+  document.getElementById('kasaGirisModalTitle').textContent = 'Kasa Girişi Ekle';
+  document.getElementById('kg-id').value = '';
+  document.getElementById('kg-tarih').value = new Date().toISOString().substring(0, 10);
+  document.getElementById('kg-tur').value = 'ortak';
+  document.getElementById('kg-ad').value = '';
+  document.getElementById('kg-currency').value = 'TRY';
+  document.getElementById('kg-tutar').value = '';
+  document.getElementById('kg-not').value = '';
+  document.getElementById('kg-delete').style.display = 'none';
+  document.getElementById('kasaGirisModal').classList.add('active');
+}
+function editKasaGiris(id) {
+  if (!requireEdit()) return;
+  const k = (state.kasaGirisleri || []).find(x => String(x.id) === String(id));
+  if (!k) return;
+  document.getElementById('kasaGirisModalTitle').textContent = 'Kasa Girişi Düzenle';
+  document.getElementById('kg-id').value = k.id;
+  document.getElementById('kg-tarih').value = k.tarih || '';
+  document.getElementById('kg-tur').value = k.tur || 'ortak';
+  document.getElementById('kg-ad').value = k.ad || '';
+  document.getElementById('kg-currency').value = k.currency || 'TRY';
+  document.getElementById('kg-tutar').value = k.tutar || '';
+  document.getElementById('kg-not').value = k.not || '';
+  document.getElementById('kg-delete').style.display = '';
+  document.getElementById('kasaGirisModal').classList.add('active');
+}
+function closeKasaGirisModal() { document.getElementById('kasaGirisModal').classList.remove('active'); }
+async function saveKasaGiris() {
+  if (!requireEdit()) return;
+  const id = document.getElementById('kg-id').value;
+  const tarih = document.getElementById('kg-tarih').value;
+  const tutar = parseFloat(document.getElementById('kg-tutar').value) || 0;
+  if (!tarih || tutar <= 0) { alert('Tarih ve tutar gerekli.'); return; }
+  const rec = {
+    id: id || ('kg_' + Date.now()),
+    tarih,
+    tur: document.getElementById('kg-tur').value,
+    ad: document.getElementById('kg-ad').value.trim(),
+    currency: document.getElementById('kg-currency').value,
+    tutar,
+    not: document.getElementById('kg-not').value.trim()
+  };
+  if (!state.kasaGirisleri) state.kasaGirisleri = [];
+  if (id) { const i = state.kasaGirisleri.findIndex(x => String(x.id) === String(id)); if (i >= 0) state.kasaGirisleri[i] = rec; }
+  else state.kasaGirisleri.push(rec);
+  await saveState();
+  closeKasaGirisModal();
+  renderKasa();
+  if (typeof renderKpis === 'function') renderKpis();
+}
+async function deleteKasaGiris() {
+  if (!requireEdit()) return;
+  const id = document.getElementById('kg-id').value;
+  if (!id) return;
+  if (!confirm('Bu kasa girişi silinsin mi?')) return;
+  state.kasaGirisleri = (state.kasaGirisleri || []).filter(x => String(x.id) !== String(id));
+  await saveState();
+  closeKasaGirisModal();
+  renderKasa();
+  if (typeof renderKpis === 'function') renderKpis();
+}
+
 function renderCashflowTable() {
   const tbody = document.getElementById('cashflowTableBody');
   tbody.innerHTML = '';
@@ -6728,8 +7065,8 @@ async function quickToggleInvoiceStatus(id) {
   } else {
     // Bekliyor/Kısmi'den ödendi'ye çevir — tüm taksitler ödenmiş say
     if (!confirm('Tüm taksitler "Ödendi" olarak işaretlensin mi? Ödenen tutar = taksit tutarı, tarih = bugün olarak kaydedilir.')) return;
-    inv.installments = (inv.installments || [{ dueDate: inv.dueDate, amount: c.grandTotal, paidAmount: 0, paidDate: '', status: 'pending' }])
-      .map(t => ({ ...t, status: 'paid', paidAmount: t.amount || c.grandTotal / Math.max(1, (inv.installments||[]).length), paidDate: t.paidDate || today }));
+    inv.installments = (inv.installments && inv.installments.length ? inv.installments : [{ dueDate: inv.dueDate, amount: c.netOdenecek, paidAmount: 0, paidDate: '', status: 'pending' }])
+      .map(t => ({ ...t, status: 'paid', paidAmount: t.amount || c.netOdenecek / Math.max(1, (inv.installments||[]).length), paidDate: t.paidDate || today }));
     inv.status = 'paid';
   }
   await saveState();
@@ -8599,6 +8936,7 @@ async function importXlsx(event) {
         state.teminatMektuplari = veriData.teminatMektuplari || [];
         state.avanslar = veriData.avanslar || [];
         state.teminatIadeleri = veriData.teminatIadeleri || [];
+        state.kasaGirisleri = veriData.kasaGirisleri || [];
         state.program = veriData.program || {};
         _restoreMeta();
         applyProjectMigrations(state);
@@ -8847,6 +9185,7 @@ async function importXlsx(event) {
     if (window._veriTaban) {
       if (window._veriTaban.avanslar) state.avanslar = window._veriTaban.avanslar;
       if (window._veriTaban.teminatIadeleri) state.teminatIadeleri = window._veriTaban.teminatIadeleri;
+      if (window._veriTaban.kasaGirisleri) state.kasaGirisleri = window._veriTaban.kasaGirisleri;
       if (window._veriTaban.teminatMektuplari) state.teminatMektuplari = window._veriTaban.teminatMektuplari;
       // İş programı: görsel "İş Programı" sayfası okunmadıysa _VERI'den al
       if (window._veriTaban.program && (!state.program || Object.keys(state.program).length === 0)) {
@@ -11189,6 +11528,7 @@ async function exportXlsx() {
     teminatMektuplari: state.teminatMektuplari || [],
     avanslar: state.avanslar || [],
     teminatIadeleri: state.teminatIadeleri || [],
+    kasaGirisleri: state.kasaGirisleri || [],
     program: state.program || {}
   };
   const json = JSON.stringify(fullState);
