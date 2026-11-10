@@ -1427,39 +1427,57 @@ body.view-mode .lock-status * {
 
   <!-- TAHSİLAT TAB -->
   <section class="tab-content" data-tab-content="tahsilat">
-    <div class="note">
-      <strong>Satış & Tahsilat:</strong> Her tahsilat kaydı için <strong>vade tarihi</strong> ve plan tutarı zorunlu — 
-      bu, ileriye dönük nakit girişi olarak finansman açığını azaltır. Tahsilat gerçekleşince 
-      <strong>gerçekleşme tarihi</strong> ve fiili tutarı eklersin. Plan ile gerçek ayrı tutulur, 
-      gecikmeleri ve sapmaları nakit akışında görürsün.
+    <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr);">
+      <div class="kpi-card">
+        <div class="label">Toplam Satış</div>
+        <div class="value" id="satis-toplam-try">—</div>
+        <div class="value-secondary" id="satis-toplam-usd">—</div>
+      </div>
+      <div class="kpi-card success">
+        <div class="label">Tahsil Edilen</div>
+        <div class="value" id="satis-odenen-try">—</div>
+        <div class="value-secondary" id="satis-odenen-usd">—</div>
+      </div>
+      <div class="kpi-card">
+        <div class="label">Kalan Alacak</div>
+        <div class="value" id="satis-kalan-try">—</div>
+        <div class="value-secondary" id="satis-kalan-usd">—</div>
+      </div>
+      <div class="kpi-card danger">
+        <div class="label">Vadesi Geçmiş</div>
+        <div class="value" id="satis-gecikmis-try">—</div>
+        <div class="value-secondary" id="satis-gecikmis-usd">—</div>
+      </div>
     </div>
     <div class="section">
-      <div class="section-header">
-        <h2 class="section-title">Tahsilat Programı</h2>
-        <div class="section-actions">
-          <button class="btn btn-primary" onclick="openCollectionModal()">+ Tahsilat Ekle</button>
+      <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div>
+          <h2 class="section-title" style="margin:0;">Müşteri / Satış Listesi</h2>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Her müşteri: toplam bedel · peşinat · taksit planı · ödenmiş / kalan / gecikmiş</div>
         </div>
+        <button class="btn btn-primary" onclick="openSatisModal()">+ Satış Ekle</button>
       </div>
       <div class="table-filter-wrap">
-        <input class="table-filter-input" type="text" placeholder="Filtrele... (müşteri, açıklama, durum)" oninput="filterTable('collectionTableBody', this.value, this)" id="filter-collection">
-        <span class="table-filter-count" id="filter-collection-count"></span>
-        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-collection','collectionTableBody','filter-collection-count')">Temizle</button>
+        <input class="table-filter-input" type="text" placeholder="Filtrele... (müşteri, birim, durum)" oninput="filterTable('satisTableBody', this.value, this)" id="filter-satis">
+        <span class="table-filter-count" id="filter-satis-count"></span>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="clearFilter('filter-satis','satisTableBody','filter-satis-count')">Temizle</button>
       </div>
       <div class="sticky-head" style="overflow: auto;">
         <table class="data-table">
           <thead>
             <tr>
-              <th class="center">Vade</th>
-              <th>Müşteri / Sözleşme</th>
-              <th>Açıklama</th>
-              <th class="right">Plan (TL)</th>
-              <th class="center">Gerç. Tarihi</th>
-              <th class="right">Gerç. (TL)</th>
+              <th>Müşteri</th>
+              <th>Birim</th>
+              <th class="center">Para</th>
+              <th class="right">Toplam Bedel</th>
+              <th class="right">Ödenmiş</th>
+              <th class="right">Kalan Borç</th>
+              <th class="right">Vadesi Geçmiş</th>
               <th class="center">Durum</th>
               <th class="center"></th>
             </tr>
           </thead>
-          <tbody id="collectionTableBody"></tbody>
+          <tbody id="satisTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -2216,6 +2234,61 @@ body.view-mode .lock-status * {
   </div>
 </div>
 
+<!-- SATIŞ MODAL (müşteri + taksit planı + ödemeler) -->
+<div class="modal-overlay" id="satisModal">
+  <div class="modal" style="max-width:860px;max-height:92vh;overflow:auto;">
+    <h3 class="modal-title" id="satisModalTitle">Satış Ekle</h3>
+    <input type="hidden" id="sm-id">
+    <div class="form-row form-row-2">
+      <div class="form-field"><label>Müşteri *</label><input type="text" id="sm-customer" placeholder="ör. Ahmet Yılmaz"></div>
+      <div class="form-field"><label>Birim / Daire</label><input type="text" id="sm-unit" placeholder="ör. B3 Daire"></div>
+    </div>
+    <div class="form-row form-row-2">
+      <div class="form-field"><label>Sözleşme Tarihi</label><input type="date" id="sm-sozlesme"></div>
+      <div class="form-field"><label>Para Birimi</label>
+        <select id="sm-currency"><option value="TRY">TL</option><option value="USD">USD</option></select>
+      </div>
+    </div>
+    <div class="form-row form-row-2">
+      <div class="form-field"><label>Toplam Bedel *</label><input type="number" id="sm-toplam" step="0.01" oninput="satisPesinatHesapla()"></div>
+      <div class="form-field"><label>Peşinat (%)</label><input type="number" id="sm-pesinatYuzde" step="0.01" placeholder="ör. 30" oninput="satisPesinatHesapla()"></div>
+    </div>
+    <div class="form-row form-row-2">
+      <div class="form-field"><label>Peşinat Tutarı (otomatik)</label><input type="number" id="sm-pesinatTutar" readonly style="background:var(--surface-2);"></div>
+      <div class="form-field"><label>Peşinat Tarihi</label><input type="date" id="sm-pesinatTarih"></div>
+    </div>
+    <div class="form-row" style="grid-template-columns:1fr 1fr 1fr;">
+      <div class="form-field"><label>Vade Adedi *</label><input type="number" id="sm-vadeAdedi" value="12" min="1"></div>
+      <div class="form-field"><label>İlk Vade Tarihi</label><input type="date" id="sm-ilkVade"></div>
+      <div class="form-field"><label>Aralık (ay)</label><input type="number" id="sm-aralik" value="1" min="1"></div>
+    </div>
+    <div style="margin:10px 0 6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <button class="btn btn-ghost" onclick="satisTaksitOlustur()">↻ Taksitleri Oluştur / Yenile</button>
+      <span style="font-size:11px;color:var(--text-muted);">Tutar ve tarihleri aşağıda elle de düzenleyebilirsin · ödedikçe "Ödenen" sütununa yaz</span>
+    </div>
+    <div style="overflow:auto;max-height:340px;border:1px solid var(--border);border-radius:6px;">
+      <table class="data-table" style="font-size:12px;">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Vade</th>
+            <th class="right">Plan Tutarı</th>
+            <th class="right">Ödenen</th>
+            <th>Ödeme Tarihi</th>
+            <th class="center">Durum</th>
+          </tr>
+        </thead>
+        <tbody id="sm-taksitBody"></tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="sm-delete" style="margin-right:auto;display:none;" onclick="deleteSatis()">Sil</button>
+      <button class="btn btn-ghost" onclick="closeSatisModal()">İptal</button>
+      <button class="btn btn-primary" onclick="saveSatis()">Kaydet</button>
+    </div>
+  </div>
+</div>
+
 <!-- DEDUCTION MODAL -->
 <div class="modal-overlay" id="deductionModal">
   <div class="modal">
@@ -2371,7 +2444,7 @@ function _unpackFromLocal(raw) {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v10.6 (10.11)';
+const APP_BUILD = 'v10.7 (10.11)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -2424,6 +2497,7 @@ const DEFAULT_PROJECT = {
   avanslar: [],
   teminatIadeleri: [],
   kasaGirisleri: [],
+  satislar: [],
   program: {},
   lastModified: 0
 };
@@ -3218,6 +3292,7 @@ function applyProjectMigrations(p) {
   });
   p.teminatIadeleri = p.teminatIadeleri || [];
   p.kasaGirisleri = p.kasaGirisleri || [];  // ortak katkısı + öz kaynak girişleri (kasa)
+  p.satislar = p.satislar || [];            // müşteri satışları + taksit planları
   p.settings.uyariConfig = p.settings.uyariConfig || { browser: false, email: false, serviceId: '', templateId: '', publicKey: '', toEmail: '' };
   if (p.settings.defaultKdvRate == null) p.settings.defaultKdvRate = 20;
   // Yaprak kalemlere KDV oranı varsayılanı (yoksa)
@@ -4956,7 +5031,7 @@ function renderTab(tabName) {
       case 'program': renderProgramTable(); break;
       case 'faturalar': renderInvoiceTable(); break;
       case 'kesintiler': renderDeductionsAll(); break;
-      case 'tahsilat': renderCollectionTable(); break;
+      case 'tahsilat': renderSatisTable(); break;
       case 'nakitakis': case 'nakit': renderCashflowTable(); break;
       case 'kasa': renderKasa(); break;
       case 'ayarlar': renderSettings(); break;
@@ -6262,6 +6337,59 @@ function _computeCashflowRaw() {
 //   GİRİŞ: satış tahsilatları (tahsil edildiği gün) + ortak katkısı + öz kaynak
 //   Bakiye = Σgiriş − Σçıkış (kümülatif)
 // ─────────────────────────────────────────────────────────────
+// ── SATIŞLAR (müşteri + taksit planı) ──
+function _addMonthsISO(iso, n) {
+  if (!iso) return '';
+  const p = String(iso).substring(0, 10).split('-');
+  if (p.length < 3) return iso;
+  const gun = +p[2];
+  // UTC aritmetiği — timezone kaymasını önler
+  const dt = new Date(Date.UTC(+p[0], (+p[1] - 1) + (parseInt(n) || 0), 1));
+  const ayGun = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + 1, 0)).getUTCDate();
+  const day = Math.min(gun, ayGun); // ay sonu taşmasını önle (31 Oca + 1 ay = 28 Şub)
+  return dt.getUTCFullYear() + '-' + String(dt.getUTCMonth() + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+}
+// Toplam, peşinat tutarı, vade adedi ve aralığa göre taksit planı üretir
+function generateTaksitler(toplam, pesinatTutar, vadeAdedi, ilkVade, aralik) {
+  const kalan = Math.max(0, (toplam || 0) - (pesinatTutar || 0));
+  const n = Math.max(1, parseInt(vadeAdedi) || 1);
+  const birim = kalan / n;
+  const arr = [];
+  for (let i = 0; i < n; i++) {
+    arr.push({ no: i + 1, vadeTarihi: _addMonthsISO(ilkVade, i * (parseInt(aralik) || 1)), planTutar: birim, odenen: 0, odenenTarih: '' });
+  }
+  return arr;
+}
+function getPesinatTutar(s) {
+  if (s.pesinat && s.pesinat.tutar != null) return s.pesinat.tutar;
+  return (s.toplamBedel || 0) * ((s.pesinatYuzde || 0) / 100);
+}
+// Bir satışın borç/ödenmiş/kalan/gecikmiş metrikleri (satışın kendi para biriminde)
+function computeSatisMetrics(s) {
+  const today = new Date().toISOString().substring(0, 10);
+  const pesinatTutar = getPesinatTutar(s);
+  const pesinatOdenen = (s.pesinat && s.pesinat.odenen) || 0;
+  let odenen = pesinatOdenen, gecikmis = 0, planToplam = pesinatTutar;
+  if (s.pesinat && s.pesinat.tarih && s.pesinat.tarih < today) gecikmis += Math.max(0, pesinatTutar - pesinatOdenen);
+  (s.taksitler || []).forEach(t => {
+    planToplam += (t.planTutar || 0);
+    odenen += (t.odenen || 0);
+    if (t.vadeTarihi && t.vadeTarihi < today) gecikmis += Math.max(0, (t.planTutar || 0) - (t.odenen || 0));
+  });
+  const toplamBedel = s.toplamBedel || planToplam;
+  const kalan = toplamBedel - odenen;
+  let durum = 'devam';
+  if (kalan <= 0.01) durum = 'tamam';
+  else if (gecikmis > 0.01) durum = 'gecikme';
+  return { toplamBedel, odenen, kalan, gecikmis, durum, pesinatTutar, pesinatOdenen, planToplam };
+}
+// TL + USD değeri (satışın para birimine göre, bugünkü kurla)
+function satisTLUSD(s, amount) {
+  const fx = getCurrentFx();
+  if (s.currency === 'USD') return { tl: (amount || 0) * fx, usd: (amount || 0) };
+  return { tl: (amount || 0), usd: fx > 0 ? (amount || 0) / fx : 0 };
+}
+
 let _kasaCache = null, _kasaKey = '';
 function computeKasa() {
   const key = _budgetDataVersion + '|' + _invDataVersion + '|' + _fxDataVersion;
@@ -6295,6 +6423,17 @@ function computeKasa() {
   // Satış tahsilatları — gerçekleşen (tahsil edildiği gün)
   (state.collections || []).forEach(c => {
     if ((c.actualAmount || 0) > 0.005) add(c.actualDate || c.dueDate, c.customer, 'Tahsilat', 'giris', c.actualAmount);
+  });
+  // Satışlar (müşteri taksit/peşinat ödemeleri) — ödeme günü, satışın para birimine göre
+  (state.satislar || []).forEach(s => {
+    const usdSale = (s.currency === 'USD');
+    const toTl = (amt, tarih) => usdSale ? (amt || 0) * (getFxForDate(tarih) || getCurrentFx()) : (amt || 0);
+    if (s.pesinat && (s.pesinat.odenen || 0) > 0.005) {
+      add(s.pesinat.odenenTarih || s.pesinat.tarih, (s.customer || '—') + ' (peşinat)', 'Tahsilat', 'giris', toTl(s.pesinat.odenen, s.pesinat.odenenTarih || s.pesinat.tarih));
+    }
+    (s.taksitler || []).forEach(t => {
+      if ((t.odenen || 0) > 0.005) add(t.odenenTarih || t.vadeTarihi, (s.customer || '—') + ' (taksit ' + t.no + ')', 'Tahsilat', 'giris', toTl(t.odenen, t.odenenTarih || t.vadeTarihi));
+    });
   });
   // Ortak katkısı + öz kaynak (elle girilen kasa girişleri)
   (state.kasaGirisleri || []).forEach(k => {
@@ -6474,6 +6613,199 @@ async function deleteKasaGirisRow(id) {
   state.kasaGirisleri = (state.kasaGirisleri || []).filter(x => String(x.id) !== String(id));
   await saveState();
   renderKasa();
+  if (typeof renderKpis === 'function') renderKpis();
+}
+
+// ─────────────────────────────────────────────────────────────
+// SATIŞ & TAHSİLAT — müşteri satışları + taksit planı + ödemeler
+// ─────────────────────────────────────────────────────────────
+function renderSatisTable() {
+  const sales = state.satislar || [];
+  let tTl = 0, tUsd = 0, oTl = 0, oUsd = 0, kTl = 0, kUsd = 0, gTl = 0, gUsd = 0;
+  const rows = [];
+  sales.forEach(s => {
+    const m = computeSatisMetrics(s);
+    const T = satisTLUSD(s, m.toplamBedel), O = satisTLUSD(s, m.odenen), K = satisTLUSD(s, m.kalan), G = satisTLUSD(s, m.gecikmis);
+    tTl += T.tl; tUsd += T.usd; oTl += O.tl; oUsd += O.usd; kTl += K.tl; kUsd += K.usd; gTl += G.tl; gUsd += G.usd;
+    const durumBadge = m.durum === 'tamam' ? '<span class="badge badge-success">✓ Tamamlandı</span>' : m.durum === 'gecikme' ? '<span class="badge badge-danger">⚠ Gecikme</span>' : '<span class="badge badge-warning">Devam</span>';
+    const fmtC = (v) => s.currency === 'USD' ? fmtUSD(v) : fmtTL(v);
+    rows.push(`<tr style="cursor:pointer;" onclick="editSatis('${s.id}')">
+      <td><strong>${escapeHtml(s.customer || '—')}</strong></td>
+      <td>${escapeHtml(s.unit || '—')}</td>
+      <td class="center">${s.currency === 'USD' ? 'USD' : 'TL'}</td>
+      <td class="right">${fmtC(m.toplamBedel)}</td>
+      <td class="right" style="color:#2f6b48;">${fmtC(m.odenen)}</td>
+      <td class="right">${fmtC(m.kalan)}</td>
+      <td class="right" style="color:${m.gecikmis > 0.01 ? '#a44132' : 'var(--text-muted)'};">${m.gecikmis > 0.01 ? fmtC(m.gecikmis) : '—'}</td>
+      <td class="center">${durumBadge}</td>
+      <td class="center"><button class="btn btn-icon btn-ghost" onclick="event.stopPropagation();editSatis('${s.id}')">Detay</button></td>
+    </tr>`);
+  });
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('satis-toplam-try', fmtTL(tTl)); set('satis-toplam-usd', fmtUSD(tUsd));
+  set('satis-odenen-try', fmtTL(oTl)); set('satis-odenen-usd', fmtUSD(oUsd));
+  set('satis-kalan-try', fmtTL(kTl)); set('satis-kalan-usd', fmtUSD(kUsd));
+  set('satis-gecikmis-try', fmtTL(gTl)); set('satis-gecikmis-usd', fmtUSD(gUsd));
+  const gEl = document.getElementById('satis-gecikmis-try'); if (gEl) gEl.style.color = gTl > 0.01 ? 'var(--danger)' : '';
+  const tbody = document.getElementById('satisTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="9" class="empty-state">Henüz satış yok. "+ Satış Ekle" ile müşteri ve taksit planı oluştur.</td></tr>';
+  const cEl = document.getElementById('filter-satis-count'); if (cEl) cEl.textContent = sales.length + ' satış';
+}
+
+function openSatisModal() {
+  if (!requireEdit()) return;
+  const bugun = new Date().toISOString().substring(0, 10);
+  document.getElementById('satisModalTitle').textContent = 'Satış Ekle';
+  document.getElementById('sm-id').value = '';
+  document.getElementById('sm-customer').value = '';
+  document.getElementById('sm-unit').value = '';
+  document.getElementById('sm-sozlesme').value = bugun;
+  document.getElementById('sm-currency').value = 'TRY';
+  document.getElementById('sm-toplam').value = '';
+  document.getElementById('sm-pesinatYuzde').value = '';
+  document.getElementById('sm-pesinatTutar').value = '';
+  document.getElementById('sm-pesinatTarih').value = bugun;
+  document.getElementById('sm-vadeAdedi').value = '12';
+  document.getElementById('sm-ilkVade').value = '';
+  document.getElementById('sm-aralik').value = '1';
+  document.getElementById('sm-taksitBody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:16px;">Alanları doldurup "Taksitleri Oluştur"a bas</td></tr>';
+  document.getElementById('sm-delete').style.display = 'none';
+  document.getElementById('satisModal').classList.add('active');
+}
+function editSatis(id) {
+  const s = (state.satislar || []).find(x => String(x.id) === String(id));
+  if (!s) return;
+  document.getElementById('satisModalTitle').textContent = 'Satış / Taksit Planı';
+  document.getElementById('sm-id').value = s.id;
+  document.getElementById('sm-customer').value = s.customer || '';
+  document.getElementById('sm-unit').value = s.unit || '';
+  document.getElementById('sm-sozlesme').value = s.sozlesmeTarihi || '';
+  document.getElementById('sm-currency').value = s.currency || 'TRY';
+  document.getElementById('sm-toplam').value = s.toplamBedel || '';
+  document.getElementById('sm-pesinatYuzde').value = s.pesinatYuzde || '';
+  document.getElementById('sm-pesinatTutar').value = getPesinatTutar(s) ? Number(getPesinatTutar(s).toFixed(2)) : '';
+  document.getElementById('sm-pesinatTarih').value = (s.pesinat && s.pesinat.tarih) || s.sozlesmeTarihi || '';
+  document.getElementById('sm-vadeAdedi').value = s.vadeAdedi || (s.taksitler || []).length || '';
+  document.getElementById('sm-ilkVade').value = s.ilkVadeTarihi || '';
+  document.getElementById('sm-aralik').value = s.taksitAraligi || 1;
+  const pesinat = s.pesinat || { tutar: getPesinatTutar(s), tarih: s.sozlesmeTarihi || '', odenen: 0, odenenTarih: '' };
+  _renderSmPlanRows(pesinat, s.taksitler || []);
+  document.getElementById('sm-delete').style.display = '';
+  document.getElementById('satisModal').classList.add('active');
+}
+function closeSatisModal() { document.getElementById('satisModal').classList.remove('active'); }
+
+function satisPesinatHesapla() {
+  const toplam = parseFloat(document.getElementById('sm-toplam').value) || 0;
+  const yuzde = parseFloat(document.getElementById('sm-pesinatYuzde').value) || 0;
+  const tutar = toplam * yuzde / 100;
+  document.getElementById('sm-pesinatTutar').value = tutar ? Number(tutar.toFixed(2)) : '';
+  const pr = document.querySelector('#sm-taksitBody tr[data-row="pesinat"] .sm-plan');
+  if (pr) pr.value = Number(tutar.toFixed(2));
+}
+function satisTaksitOlustur() {
+  const toplam = parseFloat(document.getElementById('sm-toplam').value) || 0;
+  const yuzde = parseFloat(document.getElementById('sm-pesinatYuzde').value) || 0;
+  const pesinatTutar = toplam * yuzde / 100;
+  const vadeAdedi = parseInt(document.getElementById('sm-vadeAdedi').value) || 1;
+  const ilkVade = document.getElementById('sm-ilkVade').value;
+  const aralik = parseInt(document.getElementById('sm-aralik').value) || 1;
+  if (toplam <= 0) { alert('Önce toplam bedeli gir.'); return; }
+  if (!ilkVade) { alert('İlk vade tarihi gerekli.'); return; }
+  const mevcut = document.querySelectorAll('#sm-taksitBody tr[data-row="taksit"]');
+  let odemeVar = false;
+  mevcut.forEach(r => { if ((parseFloat(r.querySelector('.sm-odenen').value) || 0) > 0) odemeVar = true; });
+  if (mevcut.length > 0 && odemeVar && !confirm('Taksitler yeniden oluşturulacak — girilmiş taksit ödemeleri silinecek. Devam?')) return;
+  const taksitler = generateTaksitler(toplam, pesinatTutar, vadeAdedi, ilkVade, aralik);
+  const prOd = document.querySelector('#sm-taksitBody tr[data-row="pesinat"] .sm-odenen');
+  const prOdT = document.querySelector('#sm-taksitBody tr[data-row="pesinat"] .sm-odenentarih');
+  const pesinat = {
+    tutar: pesinatTutar,
+    tarih: document.getElementById('sm-pesinatTarih').value || document.getElementById('sm-sozlesme').value,
+    odenen: prOd ? (parseFloat(prOd.value) || 0) : 0,
+    odenenTarih: prOdT ? (prOdT.value || '') : ''
+  };
+  _renderSmPlanRows(pesinat, taksitler);
+}
+function _smRow(label, dataAttr, vade, plan, odenen, odenenTarih, planReadonly) {
+  const paid = (odenen || 0), p = (plan || 0);
+  const today = new Date().toISOString().substring(0, 10);
+  let durum = '<span style="color:var(--text-muted)">—</span>';
+  if (p > 0 && paid >= p - 0.01) durum = '<span class="badge badge-success">✓ Ödendi</span>';
+  else if (paid > 0) durum = '<span class="badge badge-warning">Kısmi</span>';
+  else if (vade && vade < today) durum = '<span class="badge badge-danger">Gecikti</span>';
+  return `<tr ${dataAttr}>
+    <td style="white-space:nowrap;font-weight:500;">${label}</td>
+    <td><input type="date" class="sm-vade" value="${vade || ''}" style="width:135px;font-size:12px;"></td>
+    <td class="right"><input type="number" class="sm-plan" value="${p ? Number(p.toFixed(2)) : ''}" step="0.01" style="width:115px;text-align:right;font-size:12px;" ${planReadonly ? 'readonly' : ''}></td>
+    <td class="right"><input type="number" class="sm-odenen" value="${paid ? Number(paid.toFixed(2)) : ''}" step="0.01" style="width:115px;text-align:right;font-size:12px;"></td>
+    <td><input type="date" class="sm-odenentarih" value="${odenenTarih || ''}" style="width:135px;font-size:12px;"></td>
+    <td class="center">${durum}</td>
+  </tr>`;
+}
+function _renderSmPlanRows(pesinat, taksitler) {
+  const rows = [];
+  rows.push(_smRow('Peşinat', 'data-row="pesinat"', pesinat.tarih, pesinat.tutar, pesinat.odenen, pesinat.odenenTarih, true));
+  (taksitler || []).forEach(t => rows.push(_smRow(String(t.no), `data-row="taksit" data-no="${t.no}"`, t.vadeTarihi, t.planTutar, t.odenen, t.odenenTarih, false)));
+  document.getElementById('sm-taksitBody').innerHTML = rows.join('');
+}
+function _readSmPlan() {
+  const body = document.getElementById('sm-taksitBody');
+  let pesinat = { tutar: 0, tarih: '', odenen: 0, odenenTarih: '' };
+  const taksitler = [];
+  body.querySelectorAll('tr').forEach(r => {
+    const role = r.getAttribute('data-row');
+    if (!role) return;
+    const g = (sel) => { const el = r.querySelector(sel); return el ? el.value : ''; };
+    const vade = g('.sm-vade');
+    const plan = parseFloat(g('.sm-plan')) || 0;
+    const odenen = parseFloat(g('.sm-odenen')) || 0;
+    const odTarih = g('.sm-odenentarih');
+    if (role === 'pesinat') pesinat = { tutar: plan, tarih: vade, odenen, odenenTarih: odTarih };
+    else taksitler.push({ no: parseInt(r.getAttribute('data-no')) || (taksitler.length + 1), vadeTarihi: vade, planTutar: plan, odenen, odenenTarih: odTarih });
+  });
+  return { pesinat, taksitler };
+}
+async function saveSatis() {
+  if (!requireEdit()) return;
+  const id = document.getElementById('sm-id').value;
+  const customer = document.getElementById('sm-customer').value.trim();
+  const toplam = parseFloat(document.getElementById('sm-toplam').value) || 0;
+  if (!customer || toplam <= 0) { alert('Müşteri ve toplam bedel gerekli.'); return; }
+  const plan = _readSmPlan();
+  const rec = {
+    id: id || ('sat_' + Date.now()),
+    customer,
+    unit: document.getElementById('sm-unit').value.trim(),
+    sozlesmeTarihi: document.getElementById('sm-sozlesme').value,
+    currency: document.getElementById('sm-currency').value,
+    toplamBedel: toplam,
+    pesinatYuzde: parseFloat(document.getElementById('sm-pesinatYuzde').value) || 0,
+    pesinat: plan.pesinat,
+    vadeAdedi: parseInt(document.getElementById('sm-vadeAdedi').value) || plan.taksitler.length,
+    ilkVadeTarihi: document.getElementById('sm-ilkVade').value,
+    taksitAraligi: parseInt(document.getElementById('sm-aralik').value) || 1,
+    taksitler: plan.taksitler,
+    not: ''
+  };
+  if (!state.satislar) state.satislar = [];
+  if (id) { const i = state.satislar.findIndex(x => String(x.id) === String(id)); if (i >= 0) state.satislar[i] = rec; }
+  else state.satislar.push(rec);
+  await saveState();
+  closeSatisModal();
+  renderSatisTable();
+  if (typeof renderKpis === 'function') renderKpis();
+}
+async function deleteSatis() {
+  if (!requireEdit()) return;
+  const id = document.getElementById('sm-id').value;
+  if (!id) return;
+  if (!confirm('Bu satış ve taksit planı silinsin mi?')) return;
+  state.satislar = (state.satislar || []).filter(x => String(x.id) !== String(id));
+  await saveState();
+  closeSatisModal();
+  renderSatisTable();
   if (typeof renderKpis === 'function') renderKpis();
 }
 
@@ -8960,6 +9292,7 @@ async function importXlsx(event) {
         state.avanslar = veriData.avanslar || [];
         state.teminatIadeleri = veriData.teminatIadeleri || [];
         state.kasaGirisleri = veriData.kasaGirisleri || [];
+        state.satislar = veriData.satislar || [];
         state.program = veriData.program || {};
         _restoreMeta();
         applyProjectMigrations(state);
@@ -9209,6 +9542,7 @@ async function importXlsx(event) {
       if (window._veriTaban.avanslar) state.avanslar = window._veriTaban.avanslar;
       if (window._veriTaban.teminatIadeleri) state.teminatIadeleri = window._veriTaban.teminatIadeleri;
       if (window._veriTaban.kasaGirisleri) state.kasaGirisleri = window._veriTaban.kasaGirisleri;
+      if (window._veriTaban.satislar) state.satislar = window._veriTaban.satislar;
       if (window._veriTaban.teminatMektuplari) state.teminatMektuplari = window._veriTaban.teminatMektuplari;
       // İş programı: görsel "İş Programı" sayfası okunmadıysa _VERI'den al
       if (window._veriTaban.program && (!state.program || Object.keys(state.program).length === 0)) {
@@ -11552,6 +11886,7 @@ async function exportXlsx() {
     avanslar: state.avanslar || [],
     teminatIadeleri: state.teminatIadeleri || [],
     kasaGirisleri: state.kasaGirisleri || [],
+    satislar: state.satislar || [],
     program: state.program || {}
   };
   const json = JSON.stringify(fullState);
