@@ -2289,6 +2289,36 @@ body.view-mode .lock-status * {
   </div>
 </div>
 
+<!-- CARİ EKSTRE MODAL (taşeron/kod hareket dökümü) -->
+<div class="modal-overlay" id="cariEkstreModal">
+  <div class="modal" style="max-width:900px;max-height:92vh;overflow:auto;">
+    <h3 class="modal-title" id="cariEkstreTitle">Cari Ekstre</h3>
+    <div id="cariEkstreOzet" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
+    <div style="overflow:auto;max-height:52vh;border:1px solid var(--border);border-radius:6px;">
+      <table class="data-table" style="font-size:12px;">
+        <thead>
+          <tr>
+            <th>Tarih</th>
+            <th>Fatura No</th>
+            <th>Açıklama</th>
+            <th class="right" style="color:#a44132;">Taşerona Borç (+)</th>
+            <th class="right" style="color:#2f6b48;">Alacak / Ödeme (−)</th>
+            <th class="right">Bakiye</th>
+          </tr>
+        </thead>
+        <tbody id="cariEkstreBody"></tbody>
+      </table>
+    </div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">
+      <strong>+</strong> taşerona borcumuzu artırır (hakediş, teminat iadesi) · <strong>−</strong> azaltır (yansıtma, teminat kesintisi, stopaj, avans, ödeme) · <strong>Bakiye (+)</strong> = taşerona borçluyuz, <strong>(−)</strong> = taşeron bize borçlu. Avans mahsubu detayı Avans sekmesindedir.
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost view-allowed" style="margin-right:auto;" onclick="exportCariEkstreExcel()">📊 Excel indir</button>
+      <button class="btn btn-ghost" onclick="closeCariEkstre()">Kapat</button>
+    </div>
+  </div>
+</div>
+
 <!-- DEDUCTION MODAL -->
 <div class="modal-overlay" id="deductionModal">
   <div class="modal">
@@ -2444,7 +2474,7 @@ function _unpackFromLocal(raw) {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v10.7 (10.11)';
+const APP_BUILD = 'v10.8 (10.11)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -9733,6 +9763,102 @@ function closeAvansModal() { document.getElementById('avansModal').classList.rem
 
 // TAŞERON / CARİ DURUMU — her yaprak kalem için avans/fatura/ödeme/borç
 // Cari durumu verisini topla (tablo + export ortak kullanır)
+// ── CARİ EKSTRE: tek bir iş kodu (taşeron + kod) için hareket dökümü ──
+// Borç(+) = taşerona borcumuzu artıran (hakediş brüt, teminat iadesi)
+// Alacak(−) = azaltan (yansıtma, stopaj, tevkifat, ceza, teminat kesinti, avans verildi, ödeme)
+// NOT: Avans mahsubu AYRI satır yazılmaz (avans verildi bir kez düşülür → çift sayım olmaz)
+function getCariEkstre(b) {
+  const mv = [];
+  const bCode = String(b.code || '').trim();
+  let taseron = (b.supplier || '').trim();
+  // Hakedişler + kesintiler + ödemeler
+  getInvoicesForBudgetItem(b).forEach(inv => {
+    if (!taseron && inv.supplier) taseron = inv.supplier;
+    const c = calcInvoiceTotals(inv);
+    const no = inv.invoiceNo ? ('#' + inv.invoiceNo) : '';
+    mv.push({ tarih: inv.date || inv.dueDate || '', no: inv.invoiceNo || '', aciklama: 'Hakediş ' + no, borc: c.grandTotal || 0, alacak: 0 });
+    if ((c.kesYansitma || 0) > 0.005) mv.push({ tarih: inv.date || '', no: inv.invoiceNo || '', aciklama: 'Yansıtma ' + no, borc: 0, alacak: c.kesYansitma });
+    if ((c.kesTeminat || 0) > 0.005) mv.push({ tarih: inv.date || '', no: inv.invoiceNo || '', aciklama: 'Teminat kesintisi ' + no, borc: 0, alacak: c.kesTeminat });
+    if ((c.stopajAmount || 0) > 0.005) mv.push({ tarih: inv.date || '', no: inv.invoiceNo || '', aciklama: 'Stopaj ' + no, borc: 0, alacak: c.stopajAmount });
+    if ((c.tevkifatAmount || 0) > 0.005) mv.push({ tarih: inv.date || '', no: inv.invoiceNo || '', aciklama: 'Tevkifat ' + no, borc: 0, alacak: c.tevkifatAmount });
+    if ((c.kesCeza || 0) > 0.005) mv.push({ tarih: inv.date || '', no: inv.invoiceNo || '', aciklama: 'Ceza ' + no, borc: 0, alacak: c.kesCeza });
+    (inv.installments || []).forEach(t => {
+      if ((t.paidAmount || 0) > 0.005) mv.push({ tarih: t.paidDate || inv.dueDate || inv.date || '', no: inv.invoiceNo || '', aciklama: 'Ödeme ' + no, borc: 0, alacak: t.paidAmount });
+    });
+  });
+  // Avanslar (bu kod) — verildiği gün alacak(−). Kart kod bazlı olduğu için kodla eşleştir.
+  (state.avanslar || []).forEach(av => {
+    const aCode = String(av.code || '').trim();
+    if (aCode !== bCode) return;
+    if (!taseron && av.supplier) taseron = av.supplier;
+    const girisler = (av.girisler && av.girisler.length) ? av.girisler : [{ tarih: av.tarih, tutar: av.tutar }];
+    girisler.forEach(g => { if ((g.tutar || 0) > 0.005) mv.push({ tarih: g.tarih || '', no: '', aciklama: 'Avans verildi' + (av.supplier ? ' (' + av.supplier + ')' : ''), borc: 0, alacak: g.tutar }); });
+  });
+  // Teminat iadeleri (bu kod) — iade günü borç(+)
+  (state.teminatIadeleri || []).forEach(ti => {
+    const tCode = String(ti.code || '').trim();
+    if (tCode !== bCode && !tCode.startsWith(bCode + '.') && !bCode.startsWith(tCode + '.')) return;
+    if ((ti.tutar || 0) > 0.005) mv.push({ tarih: ti.tarih || '', no: '', aciklama: 'Teminat iadesi', borc: ti.tutar, alacak: 0 });
+  });
+  mv.sort((a, b2) => (a.tarih < b2.tarih ? -1 : a.tarih > b2.tarih ? 1 : 0));
+  let bak = 0, tB = 0, tA = 0;
+  mv.forEach(m => { bak += (m.borc || 0) - (m.alacak || 0); m.bakiye = bak; tB += (m.borc || 0); tA += (m.alacak || 0); });
+  return { hareketler: mv, netBakiye: bak, toplamBorc: tB, toplamAlacak: tA, taseron: taseron || '(taşeron adsız)', code: bCode, name: b.name || '' };
+}
+
+let _cariEkstreCur = null;
+function openCariEkstre(code) {
+  const b = (getLeafBudgetItems() || []).find(x => String(x.code || '').trim() === String(code || '').trim())
+    || (state.budget || []).find(x => String(x.code || '').trim() === String(code || '').trim());
+  if (!b) { alert('Kod bulunamadı: ' + code); return; }
+  const e = getCariEkstre(b);
+  _cariEkstreCur = e;
+  document.getElementById('cariEkstreTitle').textContent = 'Cari Ekstre — ' + e.taseron;
+  const nb = e.netBakiye;
+  const yon = nb > 0.5 ? 'taşerona borçluyuz' : nb < -0.5 ? 'taşeron bize borçlu' : 'kapalı';
+  document.getElementById('cariEkstreOzet').innerHTML =
+    `<strong>Kod:</strong> ${e.code} ${e.name ? '· ' + escapeHtml(e.name) : ''} &nbsp;|&nbsp; ` +
+    `Toplam Borç(+): <strong style="color:#a44132;">${fmtTL(e.toplamBorc)}</strong> &nbsp; ` +
+    `Toplam Alacak(−): <strong style="color:#2f6b48;">${fmtTL(e.toplamAlacak)}</strong> &nbsp;|&nbsp; ` +
+    `Net Bakiye: <strong style="color:${nb > 0.5 ? '#a44132' : nb < -0.5 ? '#2f6b48' : 'var(--text-muted)'};">${fmtTL(nb)}</strong> (${yon})`;
+  const tbody = document.getElementById('cariEkstreBody');
+  if (e.hareketler.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Bu kodda hareket yok.</td></tr>';
+  } else {
+    tbody.innerHTML = e.hareketler.map(m => `<tr>
+      <td class="center">${fmtDate(m.tarih)}</td>
+      <td class="mono">${m.no || '—'}</td>
+      <td>${escapeHtml(m.aciklama)}</td>
+      <td class="right" style="color:#a44132;">${m.borc > 0.005 ? '+' + fmtTL(m.borc) : '—'}</td>
+      <td class="right" style="color:#2f6b48;">${m.alacak > 0.005 ? '−' + fmtTL(m.alacak) : '—'}</td>
+      <td class="right" style="font-weight:600;color:${m.bakiye < -0.5 ? '#2f6b48' : '#1e3a5f'};">${fmtTL(m.bakiye)}</td>
+    </tr>`).join('') +
+      `<tr style="font-weight:700;background:rgba(30,58,95,0.06);border-top:2px solid var(--border-strong);">
+        <td colspan="3">KAPANIŞ BAKİYESİ</td>
+        <td class="right" style="color:#a44132;">+${fmtTL(e.toplamBorc)}</td>
+        <td class="right" style="color:#2f6b48;">−${fmtTL(e.toplamAlacak)}</td>
+        <td class="right" style="color:${nb < -0.5 ? '#2f6b48' : '#1e3a5f'};">${fmtTL(nb)}</td>
+      </tr>`;
+  }
+  document.getElementById('cariEkstreModal').classList.add('active');
+}
+function closeCariEkstre() { document.getElementById('cariEkstreModal').classList.remove('active'); }
+function exportCariEkstreExcel() {
+  if (typeof XLSX === 'undefined') { alert('Excel kütüphanesi yüklenemedi'); return; }
+  const e = _cariEkstreCur;
+  if (!e) return;
+  const rows = [['CARİ EKSTRE'], ['Taşeron', e.taseron], ['Kod', e.code + (e.name ? ' · ' + e.name : '')], [],
+    ['Tarih', 'Fatura No', 'Açıklama', 'Taşerona Borç (+)', 'Alacak/Ödeme (−)', 'Bakiye']];
+  e.hareketler.forEach(m => rows.push([m.tarih, m.no, m.aciklama, m.borc || 0, m.alacak || 0, m.bakiye]));
+  rows.push(['TOPLAM', '', '', e.toplamBorc, e.toplamAlacak, e.netBakiye]);
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{ wch: 12 }, { wch: 14 }, { wch: 30 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Cari Ekstre');
+  const ad = (e.taseron + '_' + e.code).replace(/[^a-z0-9]/gi, '_');
+  XLSX.writeFile(wb, `cari_ekstre_${ad}.xlsx`);
+}
+
 function getCariDurumuData() {
   const leaves = getLeafBudgetItems().filter(b => {
     return getInvoicesForBudgetItem(b).length > 0 || getBudgetItemAvansVerilenTry(b) > 0;
@@ -9827,8 +9953,11 @@ function renderCariTable() {
     tKes+=d.kesinti; tNet+=d.netOdenecek; tOde+=d.odenen; tBorc+=d.odenmemis;
     tTem+=d.iadeEdilecekTeminat; tYuk+=d.toplamYukumluluk;
     const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.title = 'Cari ekstreyi (hareket dökümü) aç';
+    tr.onclick = () => openCariEkstre(d.code);
     tr.innerHTML = `
-      <td class="mono">${d.code || '—'}</td>
+      <td class="mono" style="color:var(--accent);text-decoration:underline dotted;">${d.code || '—'}</td>
       <td>${escapeHtml(d.supplier || '—')}</td>
       <td class="right">${d.verilen>0?fmtTL(d.verilen):'—'}</td>
       <td class="right" style="color:#2f6b48;">${d.mahsup>0?fmtTL(d.mahsup):'—'}</td>
