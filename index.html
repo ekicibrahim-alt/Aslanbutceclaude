@@ -2474,7 +2474,7 @@ function _unpackFromLocal(raw) {
 // STATE & STORAGE
 // ============================================================
 const APP_KEY = 'bna_app_v1';
-const APP_BUILD = 'v10.8 (10.11)';
+const APP_BUILD = 'v10.9 (10.11)';
 const STORAGE_KEY = APP_KEY; // backward-compat naming
 
 // Bir proje şablonu (boş proje açılırken klonlanır)
@@ -6668,7 +6668,10 @@ function renderSatisTable() {
       <td class="right">${fmtC(m.kalan)}</td>
       <td class="right" style="color:${m.gecikmis > 0.01 ? '#a44132' : 'var(--text-muted)'};">${m.gecikmis > 0.01 ? fmtC(m.gecikmis) : '—'}</td>
       <td class="center">${durumBadge}</td>
-      <td class="center"><button class="btn btn-icon btn-ghost" onclick="event.stopPropagation();editSatis('${s.id}')">Detay</button></td>
+      <td class="center">
+        <button class="btn btn-icon btn-ghost" onclick="event.stopPropagation();editSatis('${s.id}')">Detay</button>
+        <button class="btn btn-danger" onclick="event.stopPropagation();deleteSatisRow('${s.id}')">Sil</button>
+      </td>
     </tr>`);
   });
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
@@ -6835,6 +6838,17 @@ async function deleteSatis() {
   state.satislar = (state.satislar || []).filter(x => String(x.id) !== String(id));
   await saveState();
   closeSatisModal();
+  renderSatisTable();
+  if (typeof renderKpis === 'function') renderKpis();
+}
+// Listeden doğrudan silme (satır Sil butonu)
+async function deleteSatisRow(id) {
+  if (!requireEdit()) return;
+  const s = (state.satislar || []).find(x => String(x.id) === String(id));
+  if (!s) return;
+  if (!confirm(`Bu satış ve taksit planı silinsin mi?\n\n${s.customer || ''}${s.unit ? ' · ' + s.unit : ''}`)) return;
+  state.satislar = (state.satislar || []).filter(x => String(x.id) !== String(id));
+  await saveState();
   renderSatisTable();
   if (typeof renderKpis === 'function') renderKpis();
 }
